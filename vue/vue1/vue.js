@@ -34,6 +34,45 @@ function observe(obj) {
   return ob;
 }
 
+/* 劫持数组, 生成一个vue中需要监听的数组用的prototype */
+const arrayProto = Array.prototype;
+const arrayMethods = Object.create(arrayProto);
+const methodsToPatch = [
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+];
+methodsToPatch.forEach((method) => {
+  const original = arrayProto[method];
+  Object.defineProperty(arrayMethods, method, {
+    value: function mutator(...args) {
+      const result = original.apply(this, args);
+      const ob = this._ob_;
+      let inserted;
+      switch (method) {
+        case 'push':
+        case 'unshift':
+          inserted = args;
+          break;
+        case 'splice':
+          inserted = args.slice(2);
+          break;
+      }
+      if (inserted) ob.observeArray(inserted);
+      /* 通知数组的变更 */
+      ob.dep.notify();
+      return result;
+    },
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+});
+
 function defineReactive(obj, key, val) {
   /* 方法本身利用了闭包 使得数据在内存中长久存在 */
   /**
@@ -49,6 +88,9 @@ function defineReactive(obj, key, val) {
     get: function reactiveGetter() {
       if (Dep.target) {
         dep.addDep(Dep.target);
+        if (childOb) {
+          childOb.dep.addDep(Dep.target);
+        }
       }
       return val;
     },
@@ -65,6 +107,7 @@ function defineReactive(obj, key, val) {
 class Observer {
   constructor(value) {
     this.value = value;
+    this.dep = new Dep();
     /* 在value上定义一个_ob_，值为实例本身 */
     /* FIXME：_ob_在哪些场景下可以直接使用 */
     Object.defineProperty(value, '_ob_', {
@@ -75,6 +118,7 @@ class Observer {
     });
     if (Array.isArray(value)) {
       /* 处理数组 */
+      Object.setPrototypeOf(value, arrayMethods)
       this.observeArray(value);
     } else {
       this.walk(value);
@@ -139,7 +183,6 @@ class Compile {
       const attrName = attr.name;
       const exp = attr.value;
       let dir;
-      let method;
       if (this.isDirective(attrName)) {
         dir = attrName.substring(2);
         if (this[dir]) {
@@ -243,7 +286,9 @@ class Dep {
   }
 
   notify() {
-    this.deps.forEach(watcher => watcher.update())
+    this.deps.forEach(watcher => {
+      watcher.update();
+    })
   }
 }
 

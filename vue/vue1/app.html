@@ -20,6 +20,10 @@
     </p>
     <!-- <p @click="onClick">点我使得counter+1, {{ counter }}</p> -->
     <p v-html="desc"></p>
+    <p @click="onAdd" style="cursor: pointer;">
+      <span>点我使得数组添加一项:</span>
+      <span>{{ arr }}</span>
+    </p>
   </div>
 
   <script src="./vue.js"></script>
@@ -30,11 +34,15 @@
       data: {
         counter: 1,
         desc: '<span style="color: #f10;">v-html解析成功了</span>',
+        arr: [1],
       },
       methods: {
         onClick() {
           this.counter += 1;
-        }
+        },
+        onAdd() {
+          this.arr.push(1);
+        },
       },
     })
   </script>
