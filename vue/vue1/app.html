@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Vue Test</title>
+</head>
+
+<body>
+  <div id="app">
+    <p>
+      <span>counter:</span>
+      <span v-text="counter"></span>
+    </p>
+    <p @click="onClick" style="cursor: pointer;">
+      <span>点我使得counter+1:</span>
+      <span>{{ counter }}</span>
+    </p>
+    <!-- <p @click="onClick">点我使得counter+1, {{ counter }}</p> -->
+    <p v-html="desc"></p>
+  </div>
+
+  <script src="./vue.js"></script>
+
+  <script>
+    const app = new Vue({
+      el: '#app',
+      data: {
+        counter: 1,
+        desc: '<span style="color: #f10;">v-html解析成功了</span>',
+      },
+      methods: {
+        onClick() {
+          this.counter += 1;
+        }
+      },
+    })
+  </script>
+</body>
+
+</html>
