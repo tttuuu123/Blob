@@ -89,7 +89,7 @@ function defineReactive(obj, key, val) {
       if (Dep.target) {
         dep.addDep(Dep.target);
         if (childOb) {
-          childOb.dep.addDep(Dep.target);
+          // childOb.dep.addDep(Dep.target);
         }
       }
       return val;
