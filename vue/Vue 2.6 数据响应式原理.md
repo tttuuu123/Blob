@@ -118,7 +118,7 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
 
 
 下面说一些零碎的：
-- 在数据劫持的get方法中childOb.dep.depend()的作用：
+- 在数据劫持的get方法中childOb.dep.depend()的作用：<br />
   1、响应式数据的响应式逻辑实现：<br />
     由于数组是对象，上文说过Vue的响应式处理会为每个对象创建一个Observer实例，所以可以从数组上拿到他自身的_ob_，<br />
     调用数据的7种方法，最终执行的就是_ob_.dep.notify()，而这个ob实例dep内的Watcher就是在childOb.dep.depend()这一步收集的。<br />
@@ -127,7 +127,7 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
     如果传入的target是响应式数据，那就会调用defineReactive(target._ob_.value, key, val)，<br />
     然后执行target._ob_.dep.notify()去通知Watcher更新。<br />
 
-- Vue 响应式的设计会生成多少个Observer实例，多少个dep实例
+- Vue 响应式的设计会生成多少个Observer实例，多少个dep实例：<br />
   只要调用了对数据调用了observe方法，并且该数据是对象，就会生成一个Observer实例，并且伴生一个dep实例。<br />
   同样的，在defineReactive方法中，会为每一个key也伴生一个dep实例。<br />
   举个粟子:<br />
@@ -193,7 +193,7 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   当然在实际场景中，自2.4.0版本起，Vue新增了两个实例属性$attrs和$listeners，Vue的响应式中会首先对这2个key调用defineReactiv方法(这2个key的值默认是个空对象)，</br>
   所以实际上的Observer实例和dep实例还是有更多额外因素的，比如要考虑父亲节点传入的属性，以及实例本身的inheritAttrs选项的值等。
 
-- Vue的响应式优化
+- Vue的响应式优化：<br />
   上文提到了Vue会对要做响应式处理的数据内每个对象，对象的key都分别做对应的响应式处理。</br>
   实际项目中很可能遇到纯展示的场景，而这些场景使用的数据是对象，那么这个对象实际上没必要做响应式处理。</br>
   那么可以对这个对象本身调用Object.freeze()方法冻结它，这样就可以Vue就只会为其创建一个Observer实例。</br>
