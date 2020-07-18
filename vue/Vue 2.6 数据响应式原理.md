@@ -189,7 +189,7 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   ```
   该方法即使为数组中每个对象元素继续建立响应式。</br>
   以上就是数据响应式完整的创建步骤。</br>
-  综上，这个例子中，Observer实例数量有data的值，a的值和c的值合计3个；dep的实例有3个Observer伴生的加上b合计4个。</br>
+  综上，这个例子中，Observer实例数量有data的值，a的值和c的值合计3个；dep的实例有3个Observer伴生的加上a、b、c3个key合计6个。</br>
   当然在实际场景中，自2.4.0版本起，Vue新增了两个实例属性$attrs和$listeners，Vue的响应式中会首先对这2个key调用defineReactiv方法(这2个key的值默认是个空对象)，</br>
   所以实际上的Observer实例和dep实例还是有更多额外因素的，比如要考虑父亲节点传入的属性，以及实例本身的inheritAttrs选项的值等。
 
