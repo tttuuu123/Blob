@@ -22,7 +22,7 @@ new Watcher(vm, updateComponent, noop, {
   }
 }, true /* isRenderWatcher */)
 ```
-这也说明Vue2是为每个Vue实例创建一个Watcher，所以才需要虚拟dom patch比较来找出新旧节点变化，复用未变化部分，变化部分执行相应dom操作。
+这也说明Vue2是为每个Vue实例创建一个Watcher（对Vue1的改进，Vue1是为响应式数据每个属性创建一个Watcher，所以在某个属性变化后能精确知道dom的哪部分要做变动，优点是不需要虚拟dom和patch比较，缺点是随着响应式数据量大后，Watcher越来越多，然后程序崩了），所以才需要虚拟dom patch比较来找出新旧节点变化，复用未变化部分，变化部分执行相应dom操作。
 
 在new Watcher的过程中要获取当前Watcher监听的数据的值，也就是执行get方法：
 ```javascript
@@ -121,7 +121,7 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
 - 在数据劫持的get方法中childOb.dep.depend()的作用：<br />
   1、响应式数据的响应式逻辑实现：<br />
     由于数组是对象，上文说过Vue的响应式处理会为每个对象创建一个Observer实例，所以可以从数组上拿到他自身的_ob_，<br />
-    调用数据的7种方法，最终执行的就是_ob_.dep.notify()，而这个ob实例dep内的Watcher就是在childOb.dep.depend()这一步收集的。<br />
+    调用数组的7种方法，最终执行的就是_ob_.dep.notify()，而这个ob实例dep内的Watcher就是在childOb.dep.depend()这一步收集的。<br />
 
   2、Vue提供 修改/删除 纯对象属性/数组元素 的 set/delete方法：<br />
     如果传入的target是响应式数据，那就会调用defineReactive(target._ob_.value, key, val)，<br />
@@ -201,6 +201,3 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   ```javascript
   export const emptyObject = Object.freeze({})
   ```
-
-
-
