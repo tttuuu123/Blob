@@ -135,26 +135,41 @@ flushSchedulerQueue内部就是将之前的queue遍历执行watcher的run方法�
 举个粟子：
 
 ```javascript
-const node = document.getElementById('tar');
-Promise.resolve().then(() => {
-  console.log('promise1');
-});
-this.$nextTick(() => {
-  console.log('1:', node.innerText);
-});
-this.a = '第一次改变';
-Promise.resolve().then(() => {
-  console.log('promise2');
-});
-this.$nextTick(() => {
-  console.log('2:', node.innerText);
-});
-this.a = '第二次改变';
-this.$nextTick(() => {
-  console.log('3:', node.innerText);
-});
-Promise.resolve().then(() => {
-  console.log('promise3');
+const app = new Vue({
+  el: '#app',
+  render(h) {
+    return h('p', {
+      attrs: {
+        id: 'node'
+      },
+    }, this.a)
+  },
+  data: {
+    a: '原始值',
+  },
+  mounted() {
+    const node = document.getElementById('node');
+    Promise.resolve().then(() => {
+      console.log('promise1');
+    });
+    this.$nextTick(() => {
+      console.log('1:', node.innerText);
+    });
+    this.a = '第一次改变值';
+    Promise.resolve().then(() => {
+      console.log('promise2');
+    });
+    this.$nextTick(() => {
+      console.log('2:', node.innerText);
+    });
+    this.a = '第二次改变值';
+    this.$nextTick(() => {
+      console.log('3:', node.innerText);
+    });
+    Promise.resolve().then(() => {
+      console.log('promise3');
+    });
+  },
 });
 ```
 
@@ -174,5 +189,5 @@ queue是queueWatcher方法中收集的所有Watcher的集合，所以当被劫�
 而微任务队列中可能是这样的一个集合`[microtask, flushCallbacks, microtask]`。</br>
 flushCallbacks方法是遍历执行callbacks，flushSchedulerQueue方法是遍历执行queue。
 
-搞清楚了这点，上述这个粟子就很简单了，打印顺序是 `promise1` -> `1: init` -> `2: 第二次改变` -> `3: 第二次改变` -> `promise2` -> `promise3`。
+搞清楚了这点，上述这个粟子就很简单了，打印顺序是 `promise1` -> `1: 原始值` -> `2: 第二次改变值` -> `3: 第二次改变值` -> `promise2` -> `promise3`。
 
