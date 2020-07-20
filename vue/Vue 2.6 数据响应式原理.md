@@ -201,3 +201,108 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   ```javascript
   export const emptyObject = Object.freeze({})
   ```
+
+- computed是怎么实现的：</br>
+  通常情况下我们是以配置对象的形式初始化Vue实例的，也就是new Vue(options)，在这个options中计算属性computed也是一个对象，</br>
+  如果在实例中打印this，那么可以看到this.$options.computed中就是我们定义的计算属性。</br>
+  在Vue初始化过程中会执行一步叫做initState(vm)的方法，这个方法内就是做了组件数据初始化，包括props/data/methods/computed/watch。</br>
+  ```javascript
+  /* core/instance/state.js */
+  export function initState (vm: Component) {
+    vm._watchers = []
+    const opts = vm.$options
+    if (opts.props) initProps(vm, opts.props)
+    if (opts.methods) initMethods(vm, opts.methods)
+    if (opts.data) {
+      initData(vm)
+    } else {
+      observe(vm._data = {}, true /* asRootData */)
+    }
+    if (opts.computed) initComputed(vm, opts.computed)
+    if (opts.watch && opts.watch !== nativeWatch) {
+      initWatch(vm, opts.watch)
+    }
+  }
+  ```
+  很明显的要去看iniComputed方法：
+  ```javascript
+  /* core/instance/state.js 有删减 */
+  const computedWatcherOptions = { lazy: true }
+  function initComputed (vm: Component, computed: Object) {
+    const watchers = vm._computedWatchers = Object.create(null)
+    for (const key in computed) {
+      const userDef = computed[key]
+      const getter = typeof userDef === 'function' ? userDef : userDef.get
+      // create internal watcher for the computed property.
+      watchers[key] = new Watcher(
+        vm,
+        getter || noop,
+        noop,
+        computedWatcherOptions
+      )
+    }
+    if (!(key in vm)) {
+      defineComputed(vm, key, userDef)
+    }
+  }
+  ```
+  initComputed方法中会为每个computed属性创建一个Watcher实例并保存在实例的_computedWatchers对象中，</br>
+  实例参数有getter(根据计算属性本身的类型而传入函数或者对象的get方法)，还要注意计算属性的Watcher配置对象里lazy置为true。</br>
+  在Watcher实例的构造函数中：
+  ```javascript
+  /* core/observer/watcher.js */
+  this.dirty = this.lazy // for lazy watchers
+  this.value = this.lazy
+      ? undefined
+      : this.get()
+  ```
+  因为lazy是true，所以Watcher实例的dirty初始化也赋值为true，并且计算属性不会在构造函数内调用get方法求值（get方法上文有讲）。</br>
+  然后在defineComputed（一般Vue源码中的define开头的方法的都是把属性代理到实例上，后续就可以直接用vm.xxx来访问了）方法中核心是调用了createComputedGetter方法，</br>
+  并将这个方法的返回值（也就是下文的computedGetter方法）代理到了当前实例上。
+  ```javascript
+  /* core/instance/state.js 有删减 */
+  function createComputedGetter (key) {
+    return function computedGetter () {
+      const watcher = this._computedWatchers && this._computedWatchers[key]
+      if (watcher) {
+        if (watcher.dirty) {
+          watcher.evaluate()
+        }
+        if (Dep.target) {
+          watcher.depend()
+        }
+        return watcher.value
+      }
+    }
+  }
+  ```
+  执行该方法实际就是执行computedGetter方法，其内部先获取了为当前计算属性创建的Watcher实例，dirty属性是初始化过程中赋值为true的，所以首先执行了evaluate方法：
+  ```javascript
+  /* core/observer/watcher.js */
+  evaluate () {
+    this.value = this.get()
+    this.dirty = false
+  }
+  ```
+  这里就是计算属性第一次求值，上文提过Watcher的get方法就是执行其传入的getter方法，</br>
+  在这个过程中，会获取计算属性内每个变量的值，如果变量是做过响应式处理的，那么就会触发这个变量的get，并在这个变量伴生的dep实例内收集当前计算属性的Watcher。</br>
+  执行完这一步后将dirty置为了false。</br>
+  而computedGetter方法的第二步判断Dep.target是处理一些其他场景（涉及到Dep.target，则必然和pushTarget/popTarget这两个的dep.js中的方法有关，可以直接搜索这两个方法调用的地方）。</br>
+  
+  后续因为计算属性内响应式变量的变量伴生的dep实例内收集当前计算属性的Watcher，所以当这个变量触发set时，会通知计算属性的Watcher。</br>
+  ```javascript
+  /* core/observer/watcher.js */
+  update () {
+    if (this.lazy) {
+      this.dirty = true
+    }
+  }
+  ```
+  因为计算属性的Watcher实例传入的lazy是true，所以就会把dirty重新置为true，然后就没其他操作了。</br>
+
+  上文提到了computedGetter被代理到了实例上，所以在后续render中，当要获取计算属性值时都会调用computedGetter方法。</br>
+  如果计算属性内的响应式数据值没变，那么计算属性的dirty就是false，那么就不会触发watcher.evaluate()重新求值，而是直接返回watcher.value，</br>
+  反过来如果计算属性内的响应式数据值改变了，那么计算属性的dirty就置为了true，在下一次调用到计算属性触发computedGetter方法时候就会调用watcher.evaluate()重新求值.
+
+
+  
