@@ -287,7 +287,7 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   这里就是计算属性第一次求值，上文提过Watcher的get方法就是执行其传入的getter方法，</br>
   在这个过程中，会获取计算属性内每个变量的值，如果变量是做过响应式处理的，那么就会触发这个变量的get，并在这个变量伴生的dep实例内收集当前计算属性的Watcher。</br>
   执行完这一步后将dirty置为了false。</br>
-  而computedGetter方法的第二步判断Dep.target是处理一些其他场景（涉及到Dep.target，则必然和pushTarget/popTarget这两个的dep.js中的方法有关，可以直接搜索这两个方法调用的地方）。</br>
+  而computedGetter方法的第二步判断Dep.target是处理一些其他场景（涉及到Dep.target，则必然和pushTarget/popTarget这两个的dep.js中的方法有关，可以直接搜索这两个方法调用的地方），比如某个计算属性依赖其他计算属性的场景。</br>
   
   后续因为计算属性内响应式变量的变量伴生的dep实例内收集当前计算属性的Watcher，所以当这个变量触发set时，会通知计算属性的Watcher。</br>
   ```javascript
@@ -302,7 +302,9 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
 
   上文提到了computedGetter被代理到了实例上，所以在后续render中，当要获取计算属性值时都会调用computedGetter方法。</br>
   如果计算属性内的响应式数据值没变，那么计算属性的dirty就是false，那么就不会触发watcher.evaluate()重新求值，而是直接返回watcher.value，</br>
-  反过来如果计算属性内的响应式数据值改变了，那么计算属性的dirty就置为了true，在下一次调用到计算属性触发computedGetter方法时候就会调用watcher.evaluate()重新求值.
+  反过来如果计算属性内的响应式数据值改变了，那么计算属性的dirty就置为了true，在下一次调用到计算属性触发computedGetter方法时候就会调用watcher.evaluate()重新求值。</br>
+
+  以上就是计算属性的创建和执行过程，同时也可以注意到，Vue并不会为计算属性伴生一个dep实例。
 
 
   
