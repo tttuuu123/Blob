@@ -193,15 +193,6 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   当然在实际场景中，自2.4.0版本起，Vue新增了两个实例属性$attrs和$listeners，Vue的响应式中会首先对这2个key调用defineReactiv方法(这2个key的值默认是个空对象)，</br>
   所以实际上的Observer实例和dep实例还是有更多额外因素的，比如要考虑父亲节点传入的属性，以及实例本身的inheritAttrs选项的值等。
 
-- Vue的响应式优化：<br />
-  上文提到了Vue会对要做响应式处理的数据内每个对象，对象的key都分别做对应的响应式处理。</br>
-  实际项目中很可能遇到纯展示的场景，而这些场景使用的数据是对象，那么这个对象实际上没必要做响应式处理。</br>
-  那么可以对这个对象本身调用Object.freeze()方法冻结它，这样就可以Vue就只会为其创建一个Observer实例。</br>
-  同时，Vue内部的空对象也是这么定义的：
-  ```javascript
-  export const emptyObject = Object.freeze({})
-  ```
-
 - computed是怎么实现的：</br>
   通常情况下我们是以配置对象的形式初始化Vue实例的，也就是new Vue(options)，在这个options中计算属性computed也是一个对象，</br>
   如果在实例中打印this，那么可以看到this.$options.computed中就是我们定义的计算属性。</br>
@@ -305,6 +296,24 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
   反过来如果计算属性内的响应式数据值改变了，那么计算属性的dirty就置为了true，在下一次调用到计算属性触发computedGetter方法时候就会调用watcher.evaluate()重新求值。</br>
 
   以上就是计算属性的创建和执行过程，同时也可以注意到，Vue并不会为计算属性伴生一个dep实例。
+
+- Vue2 响应式设计的问题
+  Vue的响应式过程是对options中的data中的数据在初始化过程中递归的全部做了响应式处理，开销较大。
+  纯对象新增或删除属性，数组通过下标改变元素无法监听。
+  数组响应式需要额外的修改原型链，变更数组操作的七种方法。
+  一些ES6新增的，例如Map、Set等无法实现响应式。
+  要实现响应式的增删需要学习额外的api（$set和$delete）。
+
+- Vue的响应式优化：<br />
+  上文提到了Vue会对要做响应式处理的数据内每个对象，对象的key都分别做对应的响应式处理。</br>
+  实际项目中很可能遇到纯展示的场景，而这些场景使用的数据是对象，那么这个对象实际上没必要做响应式处理。</br>
+  那么可以对这个对象本身调用Object.freeze()方法冻结它，这样就可以Vue就只会为其创建一个Observer实例。</br>
+  同时，Vue内部的空对象也是这么定义的：
+  ```javascript
+  export const emptyObject = Object.freeze({})
+  ```
+
+
 
 
   
