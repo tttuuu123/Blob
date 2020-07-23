@@ -35,7 +35,7 @@ update () {
 }
 ```
 
-其中，lazy的判定是给计算属性（computed）使用，sync是给监听属性（watch）使用，那么明显的改值触发的就是最后一个queueWatcher了：
+其中，lazy的判定是给计算属性（computed）使用，sync我目前也没发现有哪个Watcher实例的创建传入的options中会带上这个，那么明显的改值触发的就是最后一个queueWatcher了：
 
 ```javascript
 /* core/observer/scheduler.js 有删减 */

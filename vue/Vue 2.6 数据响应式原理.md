@@ -297,12 +297,121 @@ dep的notify方法内部是调用该dep收集到的每个watcher实例的update�
 
   以上就是计算属性的创建和执行过程，同时也可以注意到，Vue并不会为计算属性伴生一个dep实例。
 
-- Vue2 响应式设计的问题
-  Vue的响应式过程是对options中的data中的数据在初始化过程中递归的全部做了响应式处理，开销较大。
-  纯对象新增或删除属性，数组通过下标改变元素无法监听。
-  数组响应式需要额外的修改原型链，变更数组操作的七种方法。
-  一些ES6新增的，例如Map、Set等无法实现响应式。
-  要实现响应式的增删需要学习额外的api（$set和$delete）。
+- 自定义watch是怎么实现的：</br>
+  在上面计算属性中提过Vue初始化数据都是在initState方法中，自定义watch也不列外。</br>
+  ```javascript
+  /* core/instance/state.js 有删减 */
+
+  // Firefox has a "watch" function on Object.prototype...
+  // export const nativeWatch = ({}).watch
+
+  export function initState (vm: Component) {
+    vm._watchers = []
+    const opts = vm.$options
+    if (opts.watch && opts.watch !== nativeWatch) {
+      initWatch(vm, opts.watch)
+    }
+  }
+  ```
+
+  很明显的如果存在自定义watch，则会执行initWatch方法：
+
+  ```javascript
+  /* core/instance/state.js */
+  function initWatch (vm: Component, watch: Object) {
+    for (const key in watch) {
+      const handler = watch[key]
+      if (Array.isArray(handler)) {
+        for (let i = 0; i < handler.length; i++) {
+          createWatcher(vm, key, handler[i])
+        }
+      } else {
+        createWatcher(vm, key, handler)
+      }
+    }
+  }
+  ```
+
+  这里的handle就是watch中的key对应的值，这个值可以是方法名，或者包含选项的对象。</br>
+  最终执行的是createWatcher方法：
+
+  ```javascript
+  /* core/instance/state.js */
+  function createWatcher (
+    vm: Component,
+    expOrFn: string | Function,
+    handler: any,
+    options?: Object
+  ) {
+    if (isPlainObject(handler)) {
+      options = handler
+      handler = handler.handler
+    }
+    if (typeof handler === 'string') {
+      handler = vm[handler]
+    }
+    return vm.$watch(expOrFn, handler, options)
+  }
+  ```
+
+  createWatcher中做的事也很简单，先处理了handler是纯对象的场景（上文提到的包含选项的对象），再处理了handler是字符串的场景（上文提到的方法名）。</br>
+  然后调用了vm.$watch方法，这个$watch是在Vue的初始化执行stateMixin方法中挂载在Vue的原型链的上（实际上$set，$delete也是在这个方法中挂载Vue的原型链上）。</br>
+
+  ```javascript
+  /* core/instance/state.js */
+  Vue.prototype.$watch = function (
+    expOrFn: string | Function,
+    cb: any,
+    options?: Object
+  ): Function {
+    const vm: Component = this
+    if (isPlainObject(cb)) {
+      return createWatcher(vm, expOrFn, cb, options)
+    }
+    options = options || {}
+    options.user = true
+    const watcher = new Watcher(vm, expOrFn, cb, options)
+    if (options.immediate) {
+      try {
+        cb.call(vm, watcher.value)
+      } catch (error) {
+        handleError(error, vm, `callback for immediate watcher "${watcher.expression}"`)
+      }
+    }
+    return function unwatchFn () {
+      watcher.teardown()
+    }
+  }
+  ```
+
+  $watch方法先处理了下直接用vm.$watch定义的自定义watch的cb（第二个参数）如果是纯对象的场景。</br>
+  然后创建了一个Watcher实例，要注意的这个Watcher实例的options中传了user为true，同时还可能有个deep属性。</br>
+  如果options中immediate属性为true，则直接执行一次。</br>
+  最后返回了一个卸载方法。</br>
+  如果注意到$watch中的第一个参数也就是expOrFn，它可能是个字符串也可能是个方法。</br>
+  字符串的场景有：</br>
+    在options中配置的watch，也就是initWatch中调用createWatcher传入的是key；</br>
+    vm.$watch中可能传入的是字符串；</br>
+  方法的场景只有vm.$watch才能这么定义。</br>
+  
+  最最重要的是字符串传入的可能是'a.b'这种键路径。</br>
+  这种键路径在Watcher实例的构造方法中会调用parsePath来处理。</br>
+  后续的收集依赖就和上文的响应式原理一模一样了。</br>
+
+  到这里就可以带出另外一个问题，给定一个Vue实例，会创建多少个Watcher，</br>
+  首先每个组件会对应一个Watcher，</br>
+  接下来每个计算属性会对应一个，</br>
+  最后就是每个自定义watch会对应一个。</br>
+  实际上最快的统计方式是还是回到initState方法中，直接在vm上定义了`vm._watchers = []`，</br>
+  后续每当创建Watcher实例，在构造方法中都会执行`vm._watchers.push(this)`，</br>
+  所以打印一下这个`vm._watchers = []`的长度就可以知道这个Vue的实例内部有多少个Watcher实例了。
+
+- Vue2 响应式设计的问题：</br>
+  Vue的响应式过程是对options中的data中的数据在初始化过程中递归的全部做了响应式处理，开销较大。</br>
+  纯对象新增或删除属性，数组通过下标改变元素无法监听。</br>
+  数组响应式需要额外的修改原型链，变更数组操作的七种方法。</br>
+  一些ES6新增的，例如Map、Set等无法实现响应式。</br>
+  要实现响应式的增删需要学习额外的api（$set和$delete）。</br>
 
 - Vue的响应式优化：<br />
   上文提到了Vue会对要做响应式处理的数据内每个对象，对象的key都分别做对应的响应式处理。</br>
