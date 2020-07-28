@@ -99,7 +99,7 @@ function patch (oldVnode, vnode, hydrating, removeOnly) {
 ```
 
 要注意：在patch方法中，因为开始时候，vnode的真实dom还未创建，所以先赋值vnode的真实dom（elm）为oldVnode的elm，后续实际做的就是将vnode上的属性和dom变化更新到vnode的elm上。</br>
-Vue会在后面大量操作这个elm，要记住这个elm即是老节点的真实dom，也是进行dom操作后，反应新节点变化的真实dom。
+Vue会在后面大量操作这个elm，要记住这个elm即是老节点的真实dom，也是进行dom操作后，反应新节点变化的真实dom，换句话说老节点的真实dom和新节点的真实dom是同步变化的，所以操作elm就会直接在浏览器页面上体现。
 
 ```javascript
 /* function patch */
@@ -298,6 +298,8 @@ while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
 ```
 
 循环的中止条件是新或旧节点的子节点的首尾指针交叉，并且判断了如果旧节点不存在，就相应的指针进位。</br>
+这里一定要注意，Vue的diff比对的新旧节点的虚拟dom中的子节点，而操作的是新旧节点的真实dom，</br>
+也就是说在这个过程中，虚拟dom是不变的，而真实dom会随着比对过程中的条件直接做出相应变化。
 
 Vue专门做了一个优化：在项目中，例如常见的列表操作，大多数情况下新旧两个节点，要么头和头会相同，要么头和尾会相同，反之亦然，</br>
 所以优先比对新旧两个节点的头头、尾尾、头尾、尾头是否相等（这里的头尾并不是指的子节点的头节点和尾节点，而是当前的开始节点和结尾节点）：</br>
@@ -369,11 +371,144 @@ if (oldStartIdx > oldEndIdx) {
 
 至此patch方法就全部说完了，最终返回了vnode.elm，也就是上文强调的elm。
 
+
 - 虚拟DOM的作用：</br>
   虚拟DOM简单说就是一个描述真实DOM的JS对象。</br>
   1、将各种变化先在虚拟DOM也就是JS对象操作，开销更小，效率更高，最终将变化映射真实DOM上，并且通过diff算法可以得到最小DOM操作，配合异步更新策略，可以很好的减少浏览器的渲染次数，提升了性能。</br>
   2、通过虚拟DOM，可以实现跨平台开发（将不同平台操作DOM的方法映射为框架内操作DOM的方法），不过Vue的weex听说已经死了。</br>
   3、可以加入兼容性代码</br>
   4、在Vue中引入虚拟DOM很大程度上减少了Watcher的数量，一个组件一个Watcher实例，状态变化通知Watcher进行patch比对。
- 
+
+- 模拟一次虚拟dom diff过程：</br>
+  页面初始化有个数组arr=[1, 2, 3]，一秒后将其反转：</br>
+
+    初始化页面上的宿主模板可能是:
+    ```html
+    <div id="app">
+      <p v-for="item in a" :key="item"> {{item}}</p>
+    </div>
+    ```
+    因为是初始化，所以在__patch__方法中传入的宿主真实dom和第一次执行render后得到的虚拟dom，所以在patch方法内判定后会走createElm方法，执行createChildren方法并追加到宿主模板后面：
+    ```html
+    <div id="app">
+      <p v-for="item in a" :key="item"> {{item}}</p>
+    </div>
+
+    <div id="app">
+      <p>1</p>
+      <p>2</p>
+      <p>3</p>
+    </div>
+    ```
+    然后执行removeVnodes将宿主模板移除：
+    ```html
+    <div id="app">
+      <p>1</p>
+      <p>2</p>
+      <p>3</p>
+    </div>
+    ```
+    1s后arr反转为[3, 2, 1]，那么又进入了patch，这次因为oldVnode和vnode都存在虚拟dom，并且是sameVnode，所以走patchVnode逻辑。</br>
+    patchVnode判断了oldVnode和vnode都有子节点，且不等，所以走updateChildren逻辑，下面重点关注下updateChildren也就是diff算法的执行过程。</br>
+    首先定义了4个游标和对应的节点，节点这里以arr中的值代替：
+    ```javascript
+    oldStartIdx = 0
+    oldEndIdx = 2
+    newStartIdx = 0
+    newEndIdx = 2
+    oldStartVnode = 1
+    oldEndVnode = 3
+    newStartVnode = 3
+    newEndVnode = 1
+    ```
+    第一轮比对：
+    ```javascript
+    /**
+     * ->1 2 3
+     *   3 2 ->1
+     */
+    ```
+    显然会找到`sameVnode(oldStartVnode, newEndVnode) === true`，老节点的开始节点和新节点的结尾节点相同。</br>
+
+    这里补充一下：</br>
+    这个时候会先执行`patchVnode(oldStartVnode, newEndVnode)`,</br>
+    对这两个相等的节点递归比对，很明显，这两个节点本身却是是相同的，并且都有一个子节点，也就是文本节点1，但是这两个子节点的地址不同，所以又进入了updateChildren，</br>
+    在updateChildren中，这两个子节点的的开始节点是sameVnode，并且子节点不再又子节点了，while循环执行了一次直接退出。后续的比较2，3都会有这样一个过程，不再赘述。</br>
+
+    回到上文，老节点的开始节点和新节点的结尾节点相同，那么就会先做移动操作，这里要注意了，是将`oldStartVnode.elm`插入到`nodeOps.nextSibling(oldEndVnode.elm)`之前，</br>
+    这里oldStartVnode是1，oldEndVnode是3，`nodeOps.nextSibling(oldEndVnode.elm)`就是节点3的下一个节点，所以是将节点1插入到节点3的下一个节点之前，也就是末尾。</br>
+    （一定要注意，操作的是真实dom，而虚拟dom是不变的）:
+    ```html
+    <div id="app">
+      <p>2</p>
+      <p>3</p>
+      <p>1</p>
+    </div>
+    ```
+    然后将oldStartIdx和newEndIdx进位:
+    ```javascript
+    oldStartIdx = 1
+    oldEndIdx = 2
+    newStartIdx = 0
+    newEndIdx = 1
+    oldStartVnode = 2
+    oldEndVnode = 3
+    newStartVnode = 3
+    newEndVnode = 2
+    ```
+    新旧首尾节点都未交叉，继续执行循环，第二轮比对：
+    ```javascript
+    /**
+     * 1 ->2 3
+     * 3 ->2 1
+     */
+    ```
+    这一轮又找到了找到`sameVnode(oldStartVnode, newEndVnode) === true`，和第一轮的执行一样，将节点2插入到节点3的下一个节点（这里就是节点1）之前：</br>
+    ```html
+    <div id="app">
+      <p>3</p>
+      <p>2</p>
+      <p>1</p>
+    </div>
+    ```
+    然后将oldStartIdx和newEndIdx进位:
+    ```javascript
+    oldStartIdx = 2
+    oldEndIdx = 2
+    newStartIdx = 0
+    newEndIdx = 0
+    oldStartVnode = 3
+    oldEndVnode = 3
+    newStartVnode = 3
+    newEndVnode = 3
+    ```
+    新旧首尾节点都未交叉，继续执行循环，第三轮比对：
+    ```javascript
+    /**
+     *   1 2 ->3
+     * ->3 2 1
+     */
+    ```
+    这一轮明显的oldStartVnode和newStartVnode就是sameVnode，再和第一轮一样比对下两个节点的子节点，然后既然头头相同，只要简单的执行进位操作就好了：
+    ```javascript
+    oldStartIdx = 3
+    oldEndIdx = 2
+    newStartIdx = 1
+    newEndIdx = 0
+    ```
+    在进入下一轮循环前，判断oldStartIdx > oldEndIdx退出循环。
+
+    这就是一次完整的diff过程，同时也要注意，我举的粟子是带key的，如果不带key，那么因为undefined === undefined，那么两个节点对比中，key肯定相等，而其他条件也相等，</br>
+    所以第一轮比对，老节点的开始节点1和新节点的开始节点3就会判定会sameVnode，然后走patchVnode的过程中，会先把属性全部更新到真实dom上，那么实际上页面就变成了：</br>
+    ```html
+    <div id="app">
+      <p>3</p>
+      <p>2</p>
+      <p>3</p>
+    </div>
+    ```
+    后续几轮也同样，换句话说就不存在相同节点复用这个说法了，所以在Vue中，经常看到列表循环要加key，且不推荐用下标index作为key。
+
+
+
 
