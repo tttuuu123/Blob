@@ -509,6 +509,10 @@ if (oldStartIdx > oldEndIdx) {
     ```
     后续几轮也同样，换句话说就不存在相同节点复用这个说法了，所以在Vue中，经常看到列表循环要加key，且不推荐用下标index作为key。
 
-
-
-
+- 总结一下：</br>
+  入口是每个组件创建的那个Watcher会在自身被触发时（执行watcher的update方法），进入queueWatcher队列（每个watcher只会入队一次），后续真正执行的是updateComponent方法。</br>
+  updateComponent：先根据模板编译生成对应的vdom，再对vdom打补丁（web平台这个补丁方法就是patch）。</br>
+  patch：补丁方法，根据有没有oldVnode或oldVnode是否为真实dom（存在nodeType属性）分为了批量创建（createElm）或比对新旧节点（patchVnode）。</br>
+  patchVnode：先进行属性更新，其次根据条件执行⽂本更新或⼦节点更新。</br>
+  updateChildren：常听到的diff算法，核心思想是`同层比对，深度优先`，针对web平台做了优化，会先进行头头、头尾、尾尾、尾头四次对比，找不到再进行遍历，</br>
+  发现不同会直接对真实dom操作，这个操作是同时改变新旧节点双方的真实dom（也就是node.elm）。
