@@ -82,7 +82,7 @@ export function createCompilerCreator (baseCompile: Function): Function {
 
 createCompilerCreator方法返回了compile方法，compile方法内返回的是将template作为参数传入baseCompile方法的结果，</br>
 baseCompile方法就在createCompiler中定义的，光看代码也能看出来：</br>
-第一步是获取到抽象语法树（ast），</br>
+第一步是获取到抽象语法树（AST），</br>
 第二步是做一些优化（optimize），</br>
 第三步是生成（generate），看返回结果生成的是render函数。</br>
 createCompilerCreator作为一个高阶函数，执行后返回了一个createCompiler方法，这个方法执行后会返回前面要找的compileToFunctions这个方法。</br>
@@ -118,3 +118,74 @@ createCompileToFunctionFn也是一个高阶函数，它返回的就是要找的c
 
 到这里就找全了compileToFunctions返回render和staticRenderFns的全过程了，编译过程也就结束了。
 
+下面来看编译过程的细节。</br>
+回到baseCompile这个方法，看看它内部到底怎么做的。
+
+第一步是解析抽象语法树`const ast = parse(template.trim(), options)`，那就是这个parse方法了,</br>
+parse方法就是个解析器，解析template,返回抽象语法树（AST），也就是用js对象描述dom结构，</br>
+解析器内部分了HTML解析器、⽂本解析器和过滤器解析器。
+
+第二部是`optimize(ast, options)`，也就是优化，</br>
+
+```javascript
+/* /compiler/optimizer.js */
+export function optimize (root: ?ASTElement, options: CompilerOptions) {
+  if (!root) return
+  isStaticKey = genStaticKeysCached(options.staticKeys || '')
+  isPlatformReservedTag = options.isReservedTag || no
+  // first pass: mark all non-static nodes.
+  markStatic(root)
+  // second pass: mark static roots.
+  markStaticRoots(root, false)
+}
+```
+
+optimize方法就是个优化器，作用是在AST中找出静态⼦树并打上标记。</br>
+静态⼦树是在AST中永远不变的节点，如纯⽂本节点。</br>
+看源码可以看出实际上第一步Vue是标记静态节点`markStatic(root)`，实际做的是给所有非静态节点打上标记`node.static = false`,</br>
+然后第二步标记静态根节点`markStaticRoots(root, false)`，同时要注意下，Vue对于静态根节点的判定要求整个根节点必须有一个以上静态子节点，才会去做标记，否则认为为这个节点打上静态根节点标记是得不偿失的，不如每次都重新渲染。</br>
+
+静态节点的判定：
+
+```javascript
+/* /compiler/optimizer.js */
+function isStatic (node: ASTNode): boolean {
+  if (node.type === 2) { // expression
+    return false
+  }
+  if (node.type === 3) { // text
+    return true
+  }
+  return !!(node.pre || (
+    !node.hasBindings && // no dynamic bindings
+    !node.if && !node.for && // not v-if or v-for or v-else
+    !isBuiltInTag(node.tag) && // not a built-in
+    isPlatformReservedTag(node.tag) && // not a component
+    !isDirectChildOfTemplateFor(node) &&
+    Object.keys(node).every(isStaticKey)
+  ))
+}
+```
+
+标记静态⼦树的好处：</br>
+每次重新渲染，不需要为静态⼦树创建新节点；</br>
+虚拟DOM中patch时，可以跳过静态⼦树；</br>
+
+generate方法就是个代码生成器，作用是将AST转换为（字符串类型的）code。
+
+```javascript
+/* /compiler/codegen/index.js */
+export function generate (
+  ast: ASTElement | void,
+  options: CompilerOptions
+): CodegenResult {
+  const state = new CodegenState(options)
+  const code = ast ? genElement(ast, state) : '_c("div")'
+  return {
+    render: `with(this){return ${code}}`,
+    staticRenderFns: state.staticRenderFns
+  }
+}
+```
+
+可以看出来generate方法就是对AST调用genElement方法递归处理，返回了一段（字符串类型的）code。
