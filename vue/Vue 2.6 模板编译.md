@@ -188,4 +188,161 @@ export function generate (
 }
 ```
 
-可以看出来generate方法就是对AST调用genElement方法递归处理，返回了一段（字符串类型的）code。
+可以看出来generate方法就是对AST调用genElement方法递归处理，返回了一段（字符串类型的）code。</br>
+来以两个例子看下genElement的作用：
+
+- 第一个是genFor，Vue是怎么处理v-for指令的：
+
+```html
+<div id="demo">
+  <p v-for="item in arr" :key="item">{{item}}</p>
+</div>
+<script>
+  const app = new Vue({
+    el: '#demo',
+    data: {
+      arr: [1, 2, 3],
+    },
+  })
+</script>
+```
+
+这个简单的v-for例子生成的ast中根节点是`tag: "div",`，它的childeren中有一个`tag: "p"`
+
+```javascript
+/* tag: "div" */
+{
+  attrs: [{…}],
+  attrsList: [{…}],
+  attrsMap: {id: "demo"},
+  children: [{…}],
+  end: 77,
+  parent: undefined,
+  plain: false,
+  rawAttrsMap: {id: {…}},
+  start: 0,
+  static: false,
+  staticRoot: false,
+  tag: "div",
+  type: 1,
+}
+/* chidlren中的tag: "p" */
+{
+  alias: "item",
+  attrsList: [],
+  attrsMap: {v-for: "item in arr", :key: "item"},
+  children: [{…}],
+  end: 68,
+  for: "arr",
+  key: "item",
+  parent: {type: 1, tag: "div", attrsList: Array(1), attrsMap: {…}, rawAttrsMap: {…}, …},
+  plain: false,
+  pre: undefined,
+  rawAttrsMap: {v-for: {…}, :key: {…}},
+  rawAttrsMap: {
+    :key: {
+      end: 54,
+      name: ":key",
+      start: 43,
+      value: "item",
+    },
+    v-for: {
+      end: 42,
+      name: "v-for",
+      start: 23,
+      value: "item in arr",
+    },
+  },
+  start: 20,
+  static: false,
+  staticRoot: false,
+  tag: "p",
+  type: 1,
+}
+```
+
+可以看到v-for指令最终在ast描述的对象中多了几个属性`for: "arr"`、`alias: "item"`，`key: "item"`，同时还在`attrsMap`和`rawAttrsMap`中存了映射关系，</br>
+`rawAttrsMap`中存就是指令在模板字符串中的开始和结束下标的映射关系。
+
+```javascript
+export function genFor (
+  el: any,
+  state: CodegenState,
+  altGen?: Function,
+  altHelper?: string
+): string {
+  const exp = el.for
+  const alias = el.alias
+  const iterator1 = el.iterator1 ? `,${el.iterator1}` : ''
+  const iterator2 = el.iterator2 ? `,${el.iterator2}` : ''
+
+  el.forProcessed = true // avoid recursion
+  return `${altHelper || '_l'}((${exp}),` +
+    `function(${alias}${iterator1}${iterator2}){` +
+      `return ${(altGen || genElement)(el, state)}` +
+    '})'
+}
+
+/* 由ast生成的code */
+_l((arr),function(item){return _c('p',{key:item},[_v(" "+_s(item))])})
+```
+
+针对`<p v-for="item in arr" :key="item">{{item}}</p>`，code就是生成了以item为别名（item），arr为表达式（exp），</br>
+然后继续递归调用genElement生成文本节点`{{item}}`的code，其中`_l()`方法是（Vue定义的）专门处理for循环的函数。
+
+- 同样的来看下第二个genIf，看看v-if指令是怎么处理的：
+
+```html
+<div id="demo">
+  <p v-if="show">show</p>
+</div>
+<script>
+  const app = new Vue({
+    el: '#demo',
+    data: {
+      show: true,
+    },
+  })
+</script>
+```
+
+带v-if指令的ast和普通ast相比也是多了几个属性，最主要的就是`if: "show"`和`ifConditions: [...]`，同样也在`attrsMap`和`rawAttrsMap`中存了映射关系，</br>
+
+```javascript
+/* 有删减 */
+function genIfConditions (
+  conditions: ASTIfConditions,
+  state: CodegenState,
+  altGen?: Function,
+  altEmpty?: string
+): string {
+  const condition = conditions.shift()
+  return `(${condition.exp})?${
+    genTernaryExp(condition.block)
+  }:${
+    genIfConditions(conditions, state, altGen, altEmpty)
+  }`
+
+  /* 由ast生成的cod */
+  (show)?_c('p',[_v("show")]):_e()
+}
+```
+
+可以看到v-if指令生成的code就是个三元表达式，`show`为真就生成渲染方法，否则生成一个空的vnode。</br>
+
+```javascript
+/* /core/vdom/vnode.js */
+export const createEmptyVNode = (text: string = '') => {
+  const node = new VNode()
+  node.text = text
+  node.isComment = true
+  return node
+}
+```
+
+`_e`就是`createTextVNode`（这部分除了_c，其余都可以在/core/instance/render-helpers/index.js中看到，而_c就是createElement方法，是在initRender方法中挂载在实例上的）
+
+
+
+
+
