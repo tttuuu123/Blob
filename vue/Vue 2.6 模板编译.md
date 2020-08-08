@@ -340,7 +340,11 @@ export const createEmptyVNode = (text: string = '') => {
 }
 ```
 
-`_e`就是`createTextVNode`（这部分除了_c，其余都可以在/core/instance/render-helpers/index.js中看到，而_c就是createElement方法，是在initRender方法中挂载在实例上的）
+`_c`就是`createElement`，创建元素节点。</br>
+`_v`就是`createTextVNode`，创建文本节点。</br>
+`_e`就是`createEmptyVNode`，创建空节点。</br>
+表达式会先⽤toString格式化，别名_s。</br>
+其余都可以在/core/instance/render-helpers/index.js中看到，是在initRender方法中挂载在实例上的。
 
 
 
