@@ -214,7 +214,7 @@ function createElm (
 createElm会先判断当前vnode是否为自定义组件。
 
 ```javascript
-/* /core/vdom/patch.js 有删减 */
+/* /core/vdom/create-component.js.js 有删减 */
 function createComponent (vnode, insertedVnodeQueue, parentElm, refElm) {
   let i = vnode.data
   if (isDef(i)) {
@@ -242,3 +242,203 @@ createComponent作用是创建自定义组件，</br>
 首先获取了组件的勾子，然后执行了组件勾子的init方法，init方法就是上文说的创建自定义组件的实例，并挂载。</br>
 然后将这个组件插入到父元素上。</br>
 这就是自定义组件初始化的过程了。
+
+
+- v-model 双向绑定的实现：</br>
+
+原生组件：
+
+```html
+<div id="demo">
+  <input type="input" v-model="inputValue" />
+</div>
+
+<script>
+  const app = new Vue({
+    el: "#demo",
+    data: {
+      inputValue: 'inputExp',
+    },
+  });
+  console.log(app.$options.render)
+</script>
+```
+
+对于原生组件，打印一下编译后的结果：
+
+```javascript
+(function anonymous() {
+  with(this){
+    return _c(
+      'div',
+      {attrs:{"id":"demo"}},
+      [
+        _c(
+          'input',
+          {
+            directives:[{name:"model",rawName:"v-model",value:(inputValue),expression:"inputValue"}],
+            attrs:{"type":"input"},
+            domProps:{"value":(inputValue)},
+            on:{
+              "input":function($event){
+                if($event.target.composing)return;
+                inputValue=$event.target.value
+              }
+            }
+          })
+      ]
+    )
+  }
+})
+```
+
+可以看到在input的createElement参数的与模板中attribute对应的数据对象中domProps中为input的value赋了动态值（inputValue的值），</br>
+而在on中的事件监听，因为是input标签，所以监听的事件也是input（如果是select标签，会对应转换为change事件），</br>
+可以看到当input事件触发时，会把input元素的值赋给inputValue。</br>
+并且原生组件生成的渲染函数中指令中v-model和平时手写的createElement的参数较为一致。
+
+后续会在前文讲过的invokeCreateHooks内执行updateDOMProps方法（可以看到此例中domProps是`{"value":(inputValue)}`）：
+
+```javascript
+/* /web/runtime/modules/dom-props.js 有删减 */
+function updateDOMProps (oldVnode: VNodeWithData, vnode: VNodeWithData) {
+  if (isUndef(oldVnode.data.domProps) && isUndef(vnode.data.domProps)) {
+    return
+  }
+  let key, cur
+  const elm: any = vnode.elm
+  const oldProps = oldVnode.data.domProps || {}
+  let props = vnode.data.domProps || {}
+
+  for (key in props) {
+    cur = props[key]
+
+    if (key === 'value' && elm.tagName !== 'PROGRESS') {
+      // store value as _value as well since
+      // non-string values will be stringified
+      elm._value = cur
+      // avoid resetting cursor position when value is the same
+      const strCur = isUndef(cur) ? '' : String(cur)
+      if (shouldUpdateValue(elm, strCur)) {
+        elm.value = strCur
+      }
+    }
+  }
+}
+```
+
+因为此例的props中仅有一个key，也就是`value`，所以走了`key === 'value'`的逻辑，</br>
+而当前的elm就是input元素，cur就是绑定的值inputValue，</br>
+所以就是把inputValue赋给input的value。</br>
+所以最终可以看出来updateDOMProps方法就是对input元素进行了赋值。</br>
+而对input事件的监听则是走的原生事件监听，在事件机制前文有过叙述，走的是updateDOMListeners方法。</br>
+
+
+自定义组件：
+
+```html
+<div id="demo">
+  <comp v-model="inputValue"></comp>
+</div>
+
+<script>
+  Vue.component('comp', {
+    template: `
+        <input type="text" :value="$attrs.value"
+            @input="$emit('input', $event.target.value)">
+    `
+  })
+  const app = new Vue({
+    el: "#demo",
+    data: {
+      inputValue: 'inputExp',
+    },
+  });
+  console.log(app.$options.render)
+```
+
+对于自定义组件组件，打印一下编译后的结果：
+
+```javascript
+(function anonymous() {
+  with(this){
+    return _c(
+      'div',
+      {
+        attrs:{"id":"demo"}},
+        [
+          _c(
+            'comp',
+            {
+              model:{
+                value:(inputValue),
+                callback:function ($$v) {inputValue=$$v},
+                expression:"inputValue"
+              }
+            }
+          )
+        ]
+        ,1
+    )
+  }
+})
+```
+
+可以看到自定义组件对于v-model的处理和原生截然不同，是定义了一个model，model里面的value是和原生的一样，</br>
+会多一个callback回调方法对自定义组件v-model上绑定的变量赋值。</br>
+
+既然是自定义组件，那么必然会走createComponent方法：
+
+```javascript
+/* /core/vdom/create-component.js.js 有删减 */
+export function createComponent (
+  Ctor: Class<Component> | Function | Object | void,
+  data: ?VNodeData,
+  context: Component,
+  children: ?Array<VNode>,
+  tag?: string
+): VNode | Array<VNode> | void {
+  // transform component v-model data into props & events
+  if (isDef(data.model)) {
+    transformModel(Ctor.options, data)
+  }
+}
+```
+
+createComponent方法内部会判断是否定义了data.model，会执行transformModel：
+
+```javascript
+/* /core/vdom/create-component.js.js */
+// transform component v-model info (value and callback) into
+// prop and event handler respectively.
+function transformModel (options, data: any) {
+  const prop = (options.model && options.model.prop) || 'value'
+  const event = (options.model && options.model.event) || 'input'
+  ;(data.attrs || (data.attrs = {}))[prop] = data.model.value
+  const on = data.on || (data.on = {})
+  const existing = on[event]
+  const callback = data.model.callback
+  if (isDef(existing)) {
+    if (
+      Array.isArray(existing)
+        ? existing.indexOf(callback) === -1
+        : existing !== callback
+    ) {
+      on[event] = [callback].concat(existing)
+    }
+  } else {
+    on[event] = callback
+  }
+}
+```
+
+首先就可以看到官网上对于model属性描述的实现：
+
+`允许一个自定义组件在使用 v-model 时定制 prop 和 event。默认情况下，一个组件上的 v-model 会把 value 用作 prop 且把 input 用作 event，但是一些输入类型比如单选框和复选框按钮可能想使用 value prop 来达到不同的目的。使用 model 选项可以回避这些情况产生的冲突。`
+
+对于prop和event，如果用户定义了model属性就用用户定义的，否则默认用`value`和`input`。</br>
+然后在data的attrs属性上定义了key为prop（本例中就是value），值是`data.model.value`（本例中就是`inputValue`）。</br>
+再获取了data的on属性，并且可以看到如果v-model中定义的event和用户自定义事件中的event重复了，那么会做一个合并，否则就在on属性内添加这个event。
+
+解析完自定义组件上的v-model后，就进入了自定义组件内部，在本例中自定义组件内部有一个input元素，自定义组件的v-model最终是和内部的原生事件关联关联起来的，</br>
+而原生事件则回到了上文。

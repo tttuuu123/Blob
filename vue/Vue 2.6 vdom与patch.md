@@ -516,3 +516,9 @@ if (oldStartIdx > oldEndIdx) {
   patchVnode：先进行属性更新，其次根据条件执行⽂本更新或⼦节点更新。</br>
   updateChildren：常听到的diff算法，核心思想是`同层比对，深度优先`，针对web平台做了优化，会先进行头头、头尾、尾尾、尾头四次对比，找不到再进行遍历，</br>
   发现不同会直接对真实dom操作，这个操作是同时改变新旧节点双方的真实dom（也就是node.elm）。
+
+- 什么是vdom：</br>
+  virtual dom是一种编程概念，用js对象来描述真实dom，并将真实dom将要发生的变化先反应在vdom上，通过诸如diff算法的方式将vdom与真实dom同步。
+
+- 为什么要用vdom：</br>
+  操作真实dom代价太大，任何操作都可能导致重排、重绘；而操作js对象，则处理更快，通过diff算法来比较新旧vdom之间的差异，可以实现批量、最小化的（执行）更新dom（操作）。
