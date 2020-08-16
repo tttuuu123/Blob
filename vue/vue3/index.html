@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>hello vue3</title>
+  <script src="./reactivity.js"></script>
+</head>
+
+<body>
+  <div id="app">
+  </div>
+  <script>
+    /**
+     * Vue3拥抱了函数式编程
+     * 摒弃了this，this是动态的，其上的属性是难以预测的
+     */
+    // const { createApp, reactive} = Vue;
+
+    // const app = createApp({
+    //   setup() {
+    //     const data = reactive({
+    //       message: 'Vue3 demo',
+    //     });
+
+    //     return {
+    //       data,
+    //     };
+    //   },
+    // }).mount('#app');
+    const app = document.getElementById('app');
+    const data = reactive({
+      message: 'reactivity',
+      count: 0,
+    });
+
+    effect(() => {
+      app.innerHTML = `${data.message}, ${data.count}`;
+    })
+
+    setInterval(() => {
+      data.count += 1;
+    }, 1000);
+    
+  </script>
+</body>
+
+</html>
