@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>VueRouter</title>
+  <script src="vue.js"></script>
+  <script src="router.js"></script>
+</head>
+
+<body>
+  <div id="demo">
+    <div class="nav">
+      <router-link to="/">home</router-link>
+      |
+      <router-link to="/comp1">comp1</router-link>
+      |
+      <router-link to="/comp2">comp2</router-link>
+      |
+      <router-link to="/view-container/comp1">嵌套路由</router-link>
+    </div>
+
+    <div class="view">
+      <router-view></router-view>
+    </div>
+  </div>
+
+  <script>
+    Vue.use(VueRouter);
+
+    Vue.component('home', {
+      template: '<div>home ! ! !</div>',
+    });
+    Vue.component('comp1', {
+      template: '<div>comp1</div>',
+    });
+    Vue.component('comp2', {
+      template: '<div>comp2</div>',
+    });
+    Vue.component('viewContainer', {
+      template: '<div>viewContainer<router-view></router-view></div>',
+    });
+
+    const routes = [
+      {
+        path: '/',
+        name: 'home',
+        component: 'home',
+      },
+      // {
+      //   path: '/comp1',
+      //   name: 'comp1',
+      //   component: 'comp1'
+      // },
+      {
+        path: '/comp2',
+        name: 'comp2',
+        component: 'comp2'
+      },
+      {
+        path: '/view-container',
+        name: 'viewContainer',
+        component: 'viewContainer',
+        children: [
+          {
+            path: '/comp1',
+            name: 'comp1',
+            component: 'comp1'
+          },
+        ],
+      },
+    ];
+
+    // 实现一个VueRouter类
+    const router = new VueRouter({
+      routes,
+    });
+
+    const app = new Vue({
+      el: "#demo",
+      router,
+    });
+    console.log(app);
+  </script>
+</body>
+
+</html>
