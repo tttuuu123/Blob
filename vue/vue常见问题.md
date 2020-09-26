@@ -49,7 +49,8 @@
   对于全局组件：</br>
   在`src/core/global-api/assets.js`中的`ASSET_TYPES`存放了`['component', 'filter', 'directive']`,</br>
   遍历`ASSET_TYPES`给Vue加上了对应的静态方法，如果是`component`且是个纯对象，将其配置对象通过Vue的extend方法转换为构造函数，</br>
-  然后在当前Vue的构造函数的选项中加上compoonents选项`this.options[type + 's'][id] = definition`。（在Vue 2.6 自定义组件初始化一文中有阐述）
+  然后在当前Vue的构造函数的选项中加上components选项`this.options[type + 's'][id] = definition`。（在Vue 2.6 自定义组件初始化一文中有阐述）</br>
+
   对于单文件组件：</br>
   实际是一个配置对象，`vue-loader`会编译`template`为`render函数`，最终导出的依然是组件配置对象。
 
@@ -58,7 +59,8 @@
   也就是说在代码运行过程中这个组件的数据发生变化，只会触发这个组件的watcher进入异步更新队列，最终只调用这个组件的渲染函数和更新函数。</br>
   那么可以合理的切割组件粒度，将数据频繁变化的部分提取成组件，那么后续频繁执行的渲染函数、更新函数、打补丁函数、比对新旧dom的范围就小了，这样代码执行效率就更高了。</br>
 
-  组件化的实现全局组件是在Vue根实例生成前就注册在Vue的选项中，而局部组件是在`src/core/vdom/patch.js`中的`createElm`方法执行时实例化和挂载的。
+  组件化的实现：</br>
+  全局组件是在Vue根实例生成前就注册在Vue的选项中，而局部组件是在`src/core/vdom/patch.js`中的`createElm`方法执行时实例化和挂载的。
 
   总结：
     - 组件是Vue核心特性之一，使开发者可以使用小型、独立和通常可以复用的组件构建大型应用。
@@ -270,9 +272,9 @@
 - nextTick原理
 
   总结：
-    - nextTick是Vue提供的一个全局API，由于vue的异步更新策略导致对数据的修改不会立刻体现在dom上，如果i想获取更新后的dom状态，就需要使用nextTick。
+    - nextTick是Vue提供的一个全局API，由于vue的异步更新策略导致对数据的修改不会立刻体现在dom上，如果想获取更新后的dom状态，就需要使用nextTick。
     - vue在更新dom时是异步执行的。只要监听到数据变化，就会开启一个队列，并缓冲同一事件循环中发生的所有数据变更。
-    -  microtask因为其高优先级特性，能确保队列中的微任务在一次事件循环前被执行完毕。
+    - microtask因为其高优先级特性，能确保队列中的微任务在一次事件循环前被执行完毕。
     - 因为兼容性问题，vue做了microtask向macrotask的降级方案。
 
 
