@@ -1,0 +1,7 @@
+.block {
+  display: flex;
+  width: 100px;
+  height: 100px;
+  background-color: #f10;
+  background-image: url('./images/touxiang.png');
+}
