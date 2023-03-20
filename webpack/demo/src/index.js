@@ -1,10 +1,19 @@
-import { a, b, c } from './constants';
+import multiply from './modules/moduleB';
+import plus from './modules/moduleC';
+import { pick } from 'lodash';
 import './index.css';
+// 异步模块会单独打入一个chunk
+import('./modules/asyncModule').then(({ default: res }) => res).then(res => console.log(res));
 
-var ab = a + b;
-console.log(ab);
+multiply(1)(2)(3)(4)(5);
+plus(1, 2)(3, 4)(5);
 
-console.log(c(3))
+const a = {
+  b: 1,
+  c: 2
+}
+console.log(pick(a, 'b'));
+
 
 const div = document.createElement('div');
 div.setAttribute('class', 'block')

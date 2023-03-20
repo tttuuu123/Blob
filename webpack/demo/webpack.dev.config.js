@@ -1,23 +1,31 @@
 const path = require('path');
 const HTMLWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const StatoscopeWebpackPlugin = require('@statoscope/webpack-plugin').default;
 const TerserPlugin = require('terser-webpack-plugin');
-const { CleanWebpackPlugin } = require('clean-webpack-plugin');
+const ESLintPlugin = require('eslint-webpack-plugin');
 
 const config = {
   mode: 'production',
   profile: true,
-  entry: {
-    foo: {
-      import: './src/index.js',
-      // runtime: 'common-runtime',
-    }
-  },
+  entry: './src/index.js',
   output: {
     filename: '[name].[contenthash].js',
     path: path.join(__dirname, 'dist')
   },
+  cache: {
+    type: 'filesystem'
+  },
+  snapshot: {
+    module: {
+      hash: true,
+    },
+    resolve: {
+      hash: true,
+    }
+  },
   module: {
+    // noParse: /lodash/,
     rules: [
       {
         test: /\.js$/,
@@ -36,7 +44,7 @@ const config = {
       {
         test: /\.css$/,
         use: [
-          MiniCssExtractPlugin.loader,
+          'style-loader',
           'css-loader'
         ]
       },
@@ -56,17 +64,12 @@ const config = {
   plugins: [
     new MiniCssExtractPlugin(),
     new HTMLWebpackPlugin(),
-    new CleanWebpackPlugin()
+    // new StatoscopeWebpackPlugin()
+    new ESLintPlugin()
   ],
-  optimization: {
-    minimize: false,
-    // minimizer: [new TerserPlugin()]
-    splitChunks: {
-      chunks: 'all',
-      maxSize: 1024 * 3,
-      enforceSizeThreshold: 1024 * 10
-    },
-  },
+  watchOptions: {
+    ignored: /node_modules/
+  }
 }
 
 module.exports = config;
