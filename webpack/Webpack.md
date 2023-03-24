@@ -354,7 +354,8 @@
   并行确实能提升系统运行效率，但Node单线程架构下，所有并行计算都依托于派生子进程执行，而创建进程这个动作开销就很大——约`600ms`，所以上述并行方案需要根据项目大小按需使用。
 
 ##### 构建优化
-* `lazyCompilation`<br />
+* `lazyCompilation`
+
   实验性特性，用于实现`entry`或异步模块的按需编译。
   ```javascript
     // webpack.config.js
@@ -367,7 +368,8 @@
   ```
   启用`lazyCompilation`后，代码中通过异步语句导入的模块以及未被访问到的`entry`都不会立即编译，而是页面正式请求该模块资源时才开始构建，可以极大提升冷启动速度。<br />
   尚在试验阶段，建议开发环境使用。
-* 约束Loader执行范围<br />
+* 约束Loader执行范围
+
   Loader在执行过程中需要密集CPU操作，为此可以使用`module.rules.include`、`module.rules.exclude`等配置项，限定Loader执行范围（通常可以排除`node_modules`文件夹）。
   ```javascript
     // webpack.config.js
@@ -401,7 +403,8 @@
     }
   ```
   通过这种能力，可以将部分需要转译处理的NPM包（例如代码中包含ES6语法），纳入Loader处理范围。
-* 使用`noParse`跳过文件编译<br />
+* 使用`noParse`跳过文件编译
+
   很多库已经做好打包处理，不需要二次编译即可在浏览器运行，例如Vue2的`node_modules/vue/dist/vue.runtime.esm.js`、Lodash的`node_modules/lodash/lodash.js`<br />
   这些文件作为独立、内聚的模块，可以使用`module.noParse`配置项跳过：
   ```javascript
@@ -433,7 +436,8 @@
       }
     }
   ```
-* 最小化`watch`监听范围<br />
+* 最小化`watch`监听范围
+
   在`watch`模式下（`npx webpack --watch`），Webpack会持续监听项目目录下所有代码文件，发生变化时执行`rebuild`命令。<br />
   通常，部分资源不会频繁更新，例如`node_modules`，此时可通过`watchOptions.ignored`配置项忽略这些文件：
   ```javascript
@@ -445,7 +449,8 @@
       }
     }
   ```
-* 优化`eslint`性能<br />
+* 优化`eslint`性能
+
   在开发模式下使用`eslint`实时代码检查，会带来比较高昂且不必要的性能成本，可以使用`eslint-webpack-plugin`替代。<br />
   `eslint-webpack-plugin`会在模块构建完毕（`compilation.hooks.succeedModule`钩子)后执行检查，不会阻塞文件加载流程。
   + 安装
@@ -464,6 +469,115 @@
   + 其他
     - 可以使用编辑器自带插件完成ESLint检查
     - 使用`husky`，在代码提交前执行ESLint检查
+
+##### 动态加载
+
+  Webpack默认会将同一`Entry`下所有模块打包成一个产物文件，包括与页面关键渲染路径无关的代码，这会导致页面初始化需要花费更多时间下载这部分代码，影响首屏渲染性能。
+  * 动态加载是Webpack内置能力：
+  ```javascript
+    // index.js
+    const content = await import('./modules/asyncModule')
+  ```
+  * 缺点
+    + 过度使用会使产物过于细碎，产物文件过多可能影响HTTP性能
+    + 使用时Webpack需要在Client端注入一段支持动态加载特性的Runtime，这段代码压缩后体积也在2.5KB左右
+  * 通用方案
+    社区比较常见的用法是配合SPA的前端路由能力实现页面级别的动态加载：
+    ```javascript
+      import { createRouter, createWebHashHistory } from "vue-router";
+
+      const Home = () => import("./Home.vue");
+      const Foo = () => import(/* webpackChunkName: "sub-pages" */ "./Foo.vue");
+      const Bar = () => import(/* webpackChunkName: "sub-pages" */ "./Bar.vue");
+
+      // 基础页面
+      const routes = [
+        { path: "/bar", name: "Bar", component: Bar },
+        { path: "/foo", name: "Foo", component: Foo },
+        { path: "/", name: "Home", component: Home },
+      ];
+
+      const router = createRouter({
+        history: createWebHashHistory(),
+        routes,
+      });
+
+      export default router;
+    ```
+    示例中，三个组件均通过动态加载导入，仅当页面切换到相应路由时才会加载对应代码。<br />
+    同时`webpackChunkName`用于指定该异步模块的Chunk名称，相同Chunk名称的模块会打包到一起。
+
+##### HTTP 缓存优化
+  
+  可以通过调整产物文件的名称与内容，使其更是配HTTP持久化缓存策略。
+  > Hash 是一种将任意长度的消息压缩到某一固定长度的消息摘要的函数，不同明文计算出的摘要值不同，所以常常被用作内容唯一标识。
+  * Webpack提供的常用Hash占位符：
+
+    > 可以通过占位符传入Hash位数，如[contenthash:7]，即可限定生成的Hash长度。
+    + `[fullhash]`：整个项目的内容Hash，项目中任意模块变化都会产生新的`fullhash`
+    + `[chunkhash]`：产物对应Chunk的Hash，Chunk中任意模块变化都会产生新的`chunkhash`
+    + `[contenthash]`：产物内容Hash，仅当产物内容发生变化产生新的`contenthash`，实用性高
+  * 异步模块变化引发父级模块Hash同步变化<br />
+    异步Chunk的路径变化导致了父级Chunk的内容变化，可以使用`optimization.runtimeChunk`将这部分代码抽取为单独的Runtime Chunk。
+
+##### 使用外置依赖
+  `externals`的主要作用是将部分模块排除在Webpack打包系统之外：
+  ```javascript
+    // webpack.config.js
+    module.exports = {
+      // ...
+      externals: {
+        lodash: 'lodash'
+      }
+    }
+  ```
+  启用上述配置后，Webpack会预设运行环境已内置相关库，不需要再将这些模块打包到产物中。
+  使用
+
+##### 使用 Tree-Shaking 删除多余模块导出
+  > `Tree-Shaking`是基于`ES Module`规范的`Dead Code Elimination`技术，它会在运行过程中静态分析模块之间的导入导出，删除未使用的导出值。
+  * 启用
+    + 配置`optimization.useExports`为true，标记模块导入导出列表
+    + 启动代码优化功能：
+      - 配置`mode = production`
+      - 配置`optimization.minimize = true`
+      - 提供`optimization.minimizer`数组
+
+##### 使用 Scope Hoisting 合并模块
+  默认情况下，Webpack会将模块打包成一个个单独的模块：
+  ![scope-hoisting](./images/scope-hoisting.png)
+  这种方式需要将每个模块包裹进一段相似的函数模板中，增加了体积。<br />
+  Webpack提供Scope Hoisting功能，用于将**符合条件的多个模块合并到同一个函数空间**中，从而减少产物体积。
+  * Webpack提供了三种开启方法：
+    + 配置`mode = production`
+    + 配置`optimization.concatenateModules`
+    + 使用`ModuleConcatenationPlugin`插件
+  * 与Tree-Shaking类似，Scope Hoisting底层基于`ES Module`的静态特性，推断模块间依赖关系，并进一步判断模块能否合并，因此在以下场景会失效：
+    - 非ESM模块
+    - 模块被多个Chunk引用
+
+##### 监控产物体积
+
+  Webpack提供了一套性能监控方案，当构建产物体积超出阈值时抛出警告：
+  ```javascript
+    // webpack.config.js
+    module.exports = {
+      // ...
+      performance: {
+        // 设置所有产物体积阈值
+        maxAssetSize: 172 * 1024,
+        // 设置entry产物体积阈值
+        maxEntrypointSize: 244 * 1024,
+        // 报错方式，支持 `error` | `warning` | false
+        hints: 'error',
+        // 过滤需要监控的文件类型
+        assetFilter(filename) {
+          return filename.endsWith('.js');
+        }
+      }
+    }
+  ```
+
 
 ### Chunk
 * 按官方文档，Chunk可以分为两种：
@@ -584,15 +698,359 @@
     - 判断该Chunk的体积是和`minSize`配置项：
       * 如果体积小于`minSize`取消此次分包，对应Module依然并入原来的Chunk；
       * 如果Chunk体积大于`minSize`，则判断是否超过`maxSize`、`maxAsyncSize`、`maxInitialSize`声明的阈值，如果超过尝试将该Chunk继续分割成更小的部分；
-  + 限制分包体积
+  + 合理分包
     > 虽然`maxSize`等阈值规则会产生更多的包体，但缓存粒度会更小，命中率相对会更高，配和持久化缓存和HTTP2的多路复用能力，网络性能反而会有正向收益。
+  + `cacheGroups`<br />
+    上述`minChunks`、`maxInitialRequest`、`minSize`都属于分包条件；`splitChunksPlugin`还提供了`cacheGroups`配置项对不同文件组设置不同规则：
+      ```javascript
+        // webpack.config.js
+        module.exports = {
+          // ...
+          optimization: {
+            splitChunks: {
+              cacheGroups: {
+                vendors: {
+                  test: /[\\/]node_modules[\\/]/,
+                  minChunks: 1,
+                  minSize: 0
+                }
+              }
+            }
+          }
+        }
+      ```
+    通过设置`cacheGroups`配置`vendors`缓存组，所有命中`vendors.test`规则的模块都会被归类为`vendors`分组，优先使用该分组下`minChunks`、`minSize`等分包配置。
+    > 缓存组可以继承和/或覆盖来自`splitChunks.*`的任何选项。但是`test`、`priority`和`reuseExistingChunk`只能在缓存组级别上进行配置。将它们设置为false以禁用任何默认缓存组。
+
+    缓存组能为不同类型的资源设置更合适的分包规则，一个典型场景是将所有`node_modules`下的模块打包到vendors产物，从而实现第三方库与业务代码分离。
+    - 配置项
+      * 支持`minSize/minChunks/maxInitialRequest`等配置项
+      * `test`：支持正则、函数及字符串，所有符合`test`判断的`Module`或`Chunk`都会分到该组
+      * `type`：支持正则、函数及字符串，与`test`类似用于筛选分组命中的模块，区别是`type`的判断依据是文件类型，例如`type='json'`会命中所有JSON文件
+      * `name`：支持字符串、函数，用于设置拆分Chunk的名称
+      * `priority`：数字，用于设置分组优先级，若模块命中多个缓存分组，优先被分到`priority`更大的组
+    
+    Webpack提供了两个开箱即用的`cacheGroups`，分别是`default`与`defaultVendors`
+      ```javascript
+        // webpack.config.js
+        module.exports = {
+          // ...
+          optimization: {
+            splitChunks: {
+              cacheGroups: {
+                default: {
+                  name: '',
+                  reuseExistingChunk: true,
+                  minChunks: 2,
+                  priority: -20
+                }
+              },
+              defaultVendors: {
+                name: 'vendors',
+                reuseExistingChunk: true,
+                test: /[\\/]node_modules[\\/]/i,
+                priority: -10
+              }
+            }
+          }
+        }
+      ```
+    这两配置项默认做的事：
+      * 将所有`node_modules`中的资源单独打包到`vendors-xxx-xxx.js`命中的产物
+      * 引用次数不小于2的模块，单独打包
+  + 最佳策略
+    - `node_modules`：
+      * 可以将`node_modules`资源打包成单独文件（通过`cacheGroups`），防止业务代码的变更影响NPM包的缓存，同时建议设置`maxSize`
+    - 业务：
+      * 设置`common`分组，通过`minChunks`配置项将使用频率较高的资源合并为Common资源
+      * 首屏用不上的代码，尽量以异步方式引入
+      * 设置`optimization.runtimeChunk`为true，将运行时代码拆分为独立资源
+
+### 压缩
+* [TerserWebpackPlugin](https://webpack.docschina.org/plugins/terser-webpack-plugin)
+
+  Webpack5后默认使用Terser作为JS代码压缩器，仅需启用`optimization.minimize`配置项即可。
+
+  > `mode='product'`，默认会开启Terser压缩
+    ```javascript
+      // webpack.config.js
+      module.exports = {
+        // ...
+        optimization: {
+          minimize: true
+        }
+      }
+    ```
+  + [Terser配置项](https://github.com/terser/terser#compress-options)
+    - `dead_code`：默认true，是否删除不可触达代码
+    - `booleans_as_integers`：默认false，是否将Boolean转换为0、1
+    - `join_vars`：默认true，是否合并连续声明，例如`var a = 1; var b = 2;`合并为`var a = 1, b = 2;`
+    - 等等
+  + [TerserWebpackPlugin配置项](https://webpack.docschina.org/plugins/terser-webpack-plugin/#options)
+
+    > 如果希望自定义配置，那么仍需安装`terser-webpack-plugin`。
+    - `test`：匹配要压缩的文件
+    - `include`：在该范围内的产物会压缩
+    - `exclude`：不在该范围内的产物会压缩
+    - `parallel`：默认true，启用并行压缩
+    - `minify`：配置自定义压缩函数，默认使用`terser`库
+    - `terserOptions`：`Terser`的`minify`选项
+    - `extractComments`：默认true，注释是否提取到一个单独文件中
+  + 针对不同产物执行不同压缩策略
+    ```javascript
+      // webpack.config.js
+      module.exports = {
+        entry: {
+          foo: './src/foo.js',
+          bar: './src/bar.js'
+        },
+        output: {
+          filename: '[name].[contenthash].js',
+          path: path.join(__dirname, 'dist')
+        },
+        optimization: {
+          minimize: true,
+          minimizer: [
+            // 保留注释
+            new TerserPlugin({
+              test: /foo\.js$/i,
+              terserOptions: {
+                format: {
+                  comments: /@license/i
+                }
+              },
+              extractComments: 'all'
+            }),
+            // 删除注释
+            new TerserPlugin({
+              test: /bar\.js$/i,
+              terserOptions: {
+                format: {
+                  comments: false
+                }
+              },
+              extractComments: false
+            })
+          ]
+        }
+      }
+    ```
+  + TerserWebpackPlugin底层还支持使用UglifyJS、ESBUILD、SWC作为压缩器，使用时通过`minify`参数切换即可
+    ```javascript
+      // webpack.config.js
+      module.exports = {
+        // ...
+        optimization: {
+          minimize: true,
+          minimizer: [
+            new TerserPlugin({
+              // `terserOptions` options will be passed to `uglify-js`
+              minify: TerserPlugin.uglifyJsMinify,
+              // minify: TerserPlugin.swcMinify,
+              // minify: TerserPlugin.esbuildMinify,
+            })
+          ] 
+        }
+      }
+    ```
+* [CssMinimizerWebpackPlugin](https://webpack.docschina.org/plugins/css-minimizer-webpack-plugin/)
+  > 这个插件使用 `cssnano` 优化和压缩 CSS
+  + 安装
+    ```shell
+      npm i -D css-minimizer-webpack-plugin
+    ```
+  + 配置
+    ```javascript
+      // webpack.config.js
+      const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
+      const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
+      module.exports = {
+        // ...
+        module: {
+          rules: [{
+            test: /\.css$/i,
+            use: [MiniCssExtractPlugin.loader, 'css-loader']
+          }]
+        },
+        optimization: {
+          minimize: true,
+          minimizer: [
+            // Webpack5 之后，约定使用 `'...'` 字面量保留默认 `minimizer` 配置
+            '...',
+            new CssMinimizerPlugin()
+          ]
+        },
+        // 需要使用 `mini-css-extract-plugin` 将 CSS 代码抽取为单独文件
+        // 才能命中 `css-minimizer-webpack-plugin` 默认的 `test` 规则
+        plugins: [new MiniCssExtractPlugin()]
+      }
+    ```
+* [HtmlMinimizerWebpackPlugin](https://webpack.docschina.org/plugins/html-minimizer-webpack-plugin/)
+  + 安装
+    ```shell
+      npm i -D html-minimizer-webpack-plugin
+    ```
+  + 配置
+    ```javascript
+      // webpack.config.js
+      const HtmlMinimizerPlugin = require('html-minimizer-webpack-plugin');
+
+      module.exports = {
+        // ...
+        optimization: {
+          minimize: true,
+          minimizer: [
+            '...',
+            new HtmlMinimizerPlugin({
+              minimizerOptions: {
+                // 折叠 Boolean 型属性
+                collapseBooleanAttributes: true,
+                // 使用精简 `doctype` 定义
+                useShortDoctype: true
+              }
+            })
+          ]
+        }
+      }
+    ```
+    > 更多minimizerOptions配置项 [Html-minifier-terser optimizations](https://github.com/terser/html-minifier-terser#options-quick-reference)
+
+### Loader
+  > loader 用于对模块的源代码进行转换。loader 可以使你在 import 或 "load(加载)" 模块时预处理文件。因此，loader 类似于其他构建工具中“任务(task)”，并提供了处理前端构建步骤的得力方式。loader 可以将文件从不同的语言（如 TypeScript）转换为 JavaScript 或将内联图像转换为 data URL。loader 甚至允许你直接在 JavaScript 模块中 import CSS 文件！
+
+  Loader将文件中‘读’与‘处理‘的逻辑解耦，Webpack内部只需实现对标准JS代码解析/处理能力，特定资源的解析逻辑交由Loader补充。<br />
+  Loader通常是一种mapping形式函数，接收原始代码，返回翻译结果：
+  ```javascript
+    module.exports = function (source) {
+      const modifySource = doSomeThing(source);
+      return modifySource;
+    }
+  ```
+  * 工作流程：Webpack进入构建阶段，首先通过IO接口读取文件内容，之后调用LoaderRunner并将文件内容以`source`参数形式传递到Loader数组，`source`数据在Loader数组内可能会经过若干次形态转换，最终以标准JS代码提交给Webpack主流程，以此实现翻译功能。
+  * 函数签名：
+    ```javascript
+      module.exports = function (source, sourceMap?, data?) {
+        return source;
+      }
+    ```
+    + `source`：输入资源。第一个执行的Loader为资源文件内容；后续执行的Loader是前一个Loader的执行结果。
+    + `sourceMap`：可选参数，代码的sourceMap结构。
+    + `data`：可选参数，其它需要在Loader链中传递的信息。
+  * [上下文接口](https://webpack.js.org/api/loaders/#the-loader-context)<br />
+    Loader运行过程中可以通过一些上下文接口，有限得影响Webpack编译过程，从而产生内容转换之外的副作用。上下文接口将在运行Loader时以`this`的方式注入到Loader函数。
+    + `fs`：Compilation对象的`inputFileSystem`属性，可以通过这个对象获取更多资源文件内容
+    + `resource`：当前文件路径
+    + `resourceQuery`：文件请求参数，例如`import './src/foo?a=1'`的`resourceQuery`的值为`?a=1`
+    + `callback`：用于返回多个结果
+    + `getOptions`：获取当前Loader的配置对象
+    + `async`：用于声明异步Loader，开发者需要通过`async`接口返回的`callback`函数传递处理结果
+    + `emitWarning`：添加警告
+    + `emitError`：添加错误信息，不会中断Webpack运行
+    + `emitFile`：直接写出一个产物文件
+    + `addDependency`：将`dep`文件添加为编译依赖，当`dep`文件内容发生变化时，会触发当前文件的重新构建
+  * 取消Loader缓存<br />
+    Loader执行的各种资源转译操作通常都是CPU密集型——这在JS单线程架构下可能有性能问题；亦或异步Loader会挂起后续的加载器队列直到异步Loader触发回调。<br />
+    为此，Webpack默认会缓存Loader执行结果直到资源或资源依赖发生变化。可以通过`this.cacheable(false)`显示声明不作缓存：
+    ```javascript
+      module.exports = function (source) {
+        this.cacheable(false);
+        // ...
+        return modifySource;
+      }
+    ```
+  * 在Loader中返回多个结果<br />
+    简单的Loader可以直接`return`返回处理结果，复杂场景可以通过`callback`接口返回更多信息，供下游Loader或Webpack使用。
+    ```javascript
+      module.exports = function loader(source, sourceMap) {
+        this.callback(null, source, sourceMap);
+      }
+    ```
+    callback函数签名：
+    ```javascript
+      this.callback(
+        // 异常信息，无异常传null
+        err: Error || null,
+        // 转译结果
+        content: string || Buffer,
+        // 源码sourceMap信息
+        sourceMap?: sourceMap,
+        // 任意需要在Loader之间传递的信息
+        // 通常用来传递AST对象，避免重复解析
+        data?: any
+      )
+    ```
+  * 在Loader返回异步结果
+    ```javascript
+      module.export = async function loader(source) {
+        // 获取异步回调函数
+        const callback = this.async();
+
+        const ret = await doSomeThingAsync(source);
+
+        // 返回结果
+        callback(null, ret);
+      }
+    ```
+    调用`this.async()`获取异步回调函数，此时Webpack会将Loader标记为异步加载器，会挂起当前执行队列直到`callback`触发。
+  * 在Loader中直接写出文件
+    ```javascript
+      module.exports = function loader(source) {
+        if (this.resource.indexOf('src/index.js') > -1) {
+          // 函数签名：emitFile(name: string, content: Buffer|string, sourceMap: {...})
+          this.emitFile('entry.txt', source, null);
+        }
+        return source;
+      }
+    ```
+    `emitFile`第一个参数name是**相对于dist目录**的文件路径。
+  * 在Loader文件中添加额外依赖
+    + `addDependency(file: string)`：用于添加额外的文件依赖，当这些依赖放生变化时，也会触发重新构建
+    + `addContextDependency(directory: string)`：添加文件目录依赖，目录下文件内容变更，也会触发重新构建
+    + `addMissingDependency(file: string)`：用于添加文件依赖，效果与`addDependency`类似
+    + `clearDependencies()`：清除所有文件依赖
+  * 二进制资源
+    ```javascript
+      module.exports = function loader(source) { return source; }
+      module.exports.raw = true;
+    ```
+    添加`raw = true`，`loader`函数中获取到的`source`会是**Buffer对象**形式的二进制内容。
+  * [日志](https://webpack.js.org/api/loaders/#logging)
+
+    > Loaders 最好使用 this.getLogger() 进行日志记录，这是指向 compilation.getLogger() 具有 loader 路径和已处理的文件。这种日志记录被存储到 Stats 中并相应地格式化。它可以被 webpack 用户过滤和导出。
+
+    ```javascript
+      module.exports = function loader(source) {
+        const logger = this.getLogger();
+        logger.info('消息');
+        return source;
+      }
+    ```
+    `getLogger`返回的`logger`对象支持`verbose/log/info/warn/error`五种级别日志，用户可通过配置`infrastructureLogging.lev el`筛选不同级别日志内容。
+    ```javascript
+      // webpack.config.js
+      module.exports = {
+        // ...
+        infrastructureLogging: {
+          level: 'info'
+        }
+      }
+    ```
+  * 异常上报
+
+    一般场景使用`logger`，用户可以自定义筛选等级；明确需要警示用户的错误，用`emitError`；严重到无法继续编译的错误，使用`callback`。
+    + `logger.error`：输出错误日志，不会打断编译流程
+      ![error-logger](./images//error-logger.png)
+    + `this.emitError`：输出错误日志，不会打断编译流程。与`logger.error`相比，`emitError`会抛出异常的Loader文件、代码行、对应模块，更易定位问题
+      ![error-emitError](./images//error-emitError.png)
+    + `this.callback`：输出错误日志，会打断编译流程，异步错误也用callback
+      ![error-callback](./images/error-callback.png)
     
 
 
 
 
 
-    
 
 
 

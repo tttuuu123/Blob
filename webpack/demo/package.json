@@ -16,6 +16,7 @@
     "babel-loader": "^9.1.2",
     "clean-webpack-plugin": "^4.0.0",
     "css-loader": "^6.7.3",
+    "css-minimizer-webpack-plugin": "^4.2.2",
     "eslint": "^8.36.0",
     "eslint-webpack-plugin": "^4.0.0",
     "file-loader": "^6.2.0",
