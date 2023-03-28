@@ -24,6 +24,7 @@
     "image-webpack-loader": "^8.1.0",
     "lodash": "^4.17.21",
     "mini-css-extract-plugin": "^2.7.3",
+    "schema-utils": "^4.0.0",
     "thread-loader": "^3.0.4",
     "typescript": "^4.9.5",
     "url-loader": "^4.1.1",

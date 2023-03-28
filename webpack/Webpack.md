@@ -1045,6 +1045,165 @@
       ![error-emitError](./images//error-emitError.png)
     + `this.callback`：输出错误日志，会打断编译流程，异步错误也用callback
       ![error-callback](./images/error-callback.png)
+
+### [schema-utils](https://www.npmjs.com/package/schema-utils)
+  > Package for validate options in loaders and plugins.
+
+  开发Loader或Plugin需要对外暴露配置项，一般使用`schema-utils`工具库校验用户传入的配置是否满足需求。
+  * 安装
+  ```shell
+    npm i -D schema-utils
+  ```
+  * 编写配置对象的描述
+  ```json
+    // schema.json
+    {
+      "type": "object",
+      "properties": {
+        "option": {
+          "type": "boolean"
+        }
+      },
+      "required": ["option"],
+      "additionalProperties": false
+    }
+  ```
+  * 在Loader中使用
+  ```javascript
+    // loader.js
+    import { validate } from 'schema-utils';
+    import schema from 'xxx/schema.json';
+
+    module.exports = function loader(source) {
+      const options = this.getOptions();
+      validate(schema, options);
+      return source
+    }
+
+    // Webpack5之后可以直接使用Loader Context的`getOptions`接口完成校验
+    module.exports = function loader(source) {
+      const options = this.getOptions(schema);
+      return source;
+    }
+  ```
+  如果校验不通过，控制台会报错：
+  ![error-schema](./images/error-schema.png)
+
+##### [ajv.js](https://ajv.js.org/api.html)
+  > `schema-utils`校验能力底层依赖`ajv`。
+
+  * 默认支持七种基本数据类型：
+    + `number`：支持整数、浮点数，支持如下校验规则：
+      - `maximum`、`minimum`：属性值必须大于等于`minimum`且小于等于`maximum`
+      - `exclusiveMaximum`、`exclusiveMinimum`：属性之必须大于`exclusiveMinimum`且小于`exclusiveMaximum`
+      - `multipleOf`：属性值必须为`multipleOf`的整数倍，例如对`multipleOf = 5`，则`10/5`符合，`9/4`不符合
+    + `integer`：整数，与`number`类似
+    + `string`：字符串，支持如下校验规则：
+      - `maxLength`、`minLength`：限制字符串最大/最小长度
+      - `pattern`：正则匹配限制字符串
+      - `format`：声明字符串内容格式，[支持的格式规则](https://github.com/ajv-validator/ajv-formats)
+    + `boolean`：bool值
+    + `array`：数组，支持如下校验规则：
+      - `maxItems`、`minItems`：限制数组最大、最少的元素数量
+      - `uniqueItems`：限制数组元素是否唯一
+      - `items`：声明数组项的schema描述，数组项内可复用JSON-Schema的任意规则，从而形成嵌套定义结构
+        ```json
+          {
+            "type": "array",
+            "items": [{ "type": "integer" }, { "type": "integer" }],
+            "additionalItems": { "type": "string" }
+          }
+        ```
+      - `null`：空值，常用于复合`type`类型，例如`type = ['object', 'null']`
+    + `object`：对象，支持如下校验规则：
+      - `maxProperties`、`minProperties`：限制对象支持的最大、最少属性数
+      - `required`：声明必要属性
+      - `properties`：定义特定属性的Schema描述，与`array`类似，支持嵌套属性规则
+        ```json
+          {
+            "type": "object",
+            "properties": {
+              "foo": { "type": "string" },
+              "bar": {
+                "type": "integer",
+                "minimum": 2
+              }
+            }
+          }
+        ```
+      - `patternProperties`：和`properties`类似，属性名支持正则表达式
+        ```json
+          {
+            "type": "v",
+            "patternProperties": {
+              "^fo.*$": { "type": "string" }
+            }
+          }
+        ```
+      - `additionalProperties`：限制对象是否可以提供除`properties`、`patternProperties`之外的属性
+  * 支持一些通用规则：
+    + `enum`：枚举，属性值必须完全(deep equal)等于这些值之一
+      ```json
+        {
+          "type": "string",
+          "enum": ["foo", "bar"]
+        }
+      ```
+    + `const`：常量，属性值必须完全等于`const定义`
+  * 支持复合校验：
+    + `not`：数值必须不符合该条件，例如`{ type: 'number', not: { maximum: 3 } }`，传入值必须小于3
+    + `anyof`：数值必须满足`anyof`条件之一
+      ```json
+        // name值只接受string或函数
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "anyof": [{
+                "type": "string"
+              }, {
+                "instance": "Function"
+              }]
+            }
+          }
+        }
+      ```
+    + `oneof`：数值必须满足且仅满足`oneof`条件之一
+      ```json
+        // 值只能为小于等于3的浮点数，或大于3的整数
+        {
+          "type": "number",
+          "oneof": [{
+            "maximum": 3
+          }, {
+            "type": "integer"
+          }]
+        }
+      ```
+    + `if/else/then`：三元表达式组
+      ```json
+        {
+          "type": "object",
+          "if": {
+            "properties": {
+              "foo": { "type": "string" }
+            }
+          },
+          "then": { "required": ["bar"] },
+          "else": { "required": ["baz"] }
+        }
+      ```
+
+##### [loader-utils](https://github.com/webpack/loader-utils)
+  > 假若 Loader 需要生成额外的资源文件，建议使用 loader-utils 拼接产物路径
+
+  * `loader-utils`包含四个接口：
+    + `urlToRequest`：用于将模块路径转换为文件路径的工具函数
+    + `isUrlRequest`：用于判定字符串是否为模块请求路径
+    + `getHashDigest`：用于计算内容Hash值
+    + `interpolateName`：用于拼接文件名的模板工具
+
+
     
 
 

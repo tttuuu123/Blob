@@ -1,0 +1,11 @@
+{
+  "title": "My Loader options",
+  "type": "object",
+  "properties": {
+    "name": {
+      "description": "This is description of option.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

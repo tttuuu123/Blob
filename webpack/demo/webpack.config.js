@@ -21,9 +21,9 @@ const config = {
   experiments: {
     topLevelAwait: true,
   },
-  externals: {
-    lodash: 'lodash'
-  },
+  // externals: {
+  //   lodash: 'lodash'
+  // },
   module: {
     rules: [
       {
@@ -41,12 +41,15 @@ const config = {
               presets: ['@babel/preset-env'],
             },
           },
-          {
-            loader: path.resolve(__dirname, './custom-loader/emit-file-loader.js')
-          },
+          // {
+          //   loader: path.resolve(__dirname, './custom-loader/emit-file-loader.js')
+          // },
           // {
           //   loader: path.resolve(__dirname, './custom-loader/error-loader.js')
           // }
+          {
+            loader: path.resolve(__dirname, './custom-loader/validate-loader/validate-loader.js'),
+          }
         ],
       },
       {
