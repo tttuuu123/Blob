@@ -7,6 +7,7 @@ const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const ConsoleWebpackPlugin = require('./custom-plugin/console-plugin');
 const ProgressConsolePlugin = require('./custom-plugin/progress-console-plugin');
+const StatsPlugin = require('./custom-plugin/stats-plugin');
 
 const config = {
   mode: 'production',
@@ -79,15 +80,16 @@ const config = {
     new MiniCssExtractPlugin(),
     new HTMLWebpackPlugin(),
     new CleanWebpackPlugin(),
-    // new ConsoleWebpackPlugin()
+    new ConsoleWebpackPlugin(),
     // new ProgressPlugin({
     //   activeModules: false,
     //   entries: false,
-    //   handler(percentage, message, ...args) {
-    //     console.info(`${percentage.toFixed(2) * 100}%`, message, ...args);
-    //   }
+      // handler(percentage, message, ...args) {
+      //   console.info(`${percentage.toFixed(2) * 100}%`, message, ...args);
+      // }
     // }),
-    new ProgressConsolePlugin(),
+    // new ProgressConsolePlugin(),
+    new StatsPlugin()
   ],
   optimization: {
     usedExports: true,

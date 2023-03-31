@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1680249686212" clover="3.2.0">
+  <project timestamp="1680249686213" name="All files">
+    <metrics statements="17" coveredstatements="16" conditionals="2" coveredconditionals="1" methods="6" coveredmethods="6" elements="25" coveredelements="23" complexity="0" loc="17" ncloc="17" packages="2" files="2" classes="2"/>
+    <package name="custom-plugin">
+      <metrics statements="10" coveredstatements="10" conditionals="0" coveredconditionals="0" methods="3" coveredmethods="3"/>
+      <file name="console-plugin.js" path="/Users/shaojiaqi/Documents/gitreposities/Blob/webpack/demo/custom-plugin/console-plugin.js">
+        <metrics statements="10" coveredstatements="10" conditionals="0" coveredconditionals="0" methods="3" coveredmethods="3"/>
+        <line num="1" count="1" type="stmt"/>
+        <line num="12" count="1" type="stmt"/>
+        <line num="13" count="1" type="stmt"/>
+        <line num="14" count="1" type="stmt"/>
+        <line num="15" count="1" type="stmt"/>
+        <line num="18" count="1" type="stmt"/>
+        <line num="19" count="1" type="stmt"/>
+        <line num="28" count="1" type="stmt"/>
+        <line num="30" count="1" type="stmt"/>
+        <line num="35" count="1" type="stmt"/>
+      </file>
+    </package>
+    <package name="tests.helpers">
+      <metrics statements="7" coveredstatements="6" conditionals="2" coveredconditionals="1" methods="3" coveredmethods="3"/>
+      <file name="index.js" path="/Users/shaojiaqi/Documents/gitreposities/Blob/webpack/demo/tests/helpers/index.js">
+        <metrics statements="7" coveredstatements="6" conditionals="2" coveredconditionals="1" methods="3" coveredmethods="3"/>
+        <line num="6" count="1" type="stmt"/>
+        <line num="15" count="1" type="stmt"/>
+        <line num="16" count="1" type="stmt"/>
+        <line num="18" count="1" type="stmt"/>
+        <line num="19" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="20" count="0" type="stmt"/>
+        <line num="22" count="1" type="stmt"/>
+      </file>
+    </package>
+  </project>
+</coverage>
