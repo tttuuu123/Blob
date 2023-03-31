@@ -1026,7 +1026,7 @@
         return source;
       }
     ```
-    `getLogger`返回的`logger`对象支持`verbose/log/info/warn/error`五种级别日志，用户可通过配置`infrastructureLogging.lev el`筛选不同级别日志内容。
+    `getLogger`返回的`logger`对象支持`verbose/log/info/warn/error`五种级别日志，用户可通过配置`infrastructureLogging.level`筛选不同级别日志内容。
     ```javascript
       // webpack.config.js
       module.exports = {
@@ -1202,6 +1202,110 @@
     + `isUrlRequest`：用于判定字符串是否为模块请求路径
     + `getHashDigest`：用于计算内容Hash值
     + `interpolateName`：用于拼接文件名的模板工具
+
+### 插件
+  > Webpack对外提供了Loader和Plugin两种扩展方式，其中Loader职责较为单一；Plugin则功能强大，借助Webpack数量庞大的Hook，几乎可以改写Webpack所有特性。
+
+  * 核心对象
+    + [Compiler](https://webpack.js.org/api/compiler-hooks/)：全局构建管理器。Webpack启动后会先创建`compiler`对象，
+    负责管理配置信息、Loader、Plugin等
+    + [Compilation](https://webpack.js.org/api/compilation-hooks/)：单次构建过程的管理器，负责遍历模块，执行编译操作；当`watch = true`时，每次文件变更触发重新编译，都会创建一个新的`compilation`对象
+    + 此外还有[NormalModule](https://webpack.js.org/api/normalmodulefactory-hooks/)、[ContextModule](https://webpack.js.org/api/contextmodulefactory-hooks/)、[Parse](https://webpack.js.org/api/parser/)等，也都暴露了很多hook
+  * Hook上下文
+    + `compiler`对象：
+      - `createChildCompiler`：创建子`compiler`对象，子对象会继承原始Compiler的所有配置数据
+      - `createCompilation`：创建`compilation`对象，可以借此实现并行编译
+      - `close`：结束编译
+      - `getCache`：获取缓存接口，可以借此复用Webpack5的缓存功能
+      - `getInfrastructureLogger`：获取日志对象
+      - 等等
+    + `compilation`对象：
+      - `addModule`：用于添加模块，例如Module遍历出依赖后，就会调用该接口将新模块加入构建需求中
+      - `addEntry`：添加新的入口模块，效果与直接定义`entry`配置相似
+      - `emitAsset`：用于添加产物文件，效果与Loader Context的`emitAsset`类似
+      - `getDependencyReference`：从给定模块返回对依赖项的引用，常用于计算模块引用关系
+      - 等等
+    + `module`对象：资源类型，有`NormalModule/RawModule/ContextModule`等子类型，其中`NormalModule`使用频率较高，提供如下接口：
+      - `identifier`：读取模块唯一标识符
+      - `getCurrentLoader`：读取当前正在执行的Loader对象
+      - `originalSource`：读取模块原始内容
+      - `serialize/deserialize`：序列化/反序列化函数，用于实现持久化缓存，一般不需要调用
+      - `issuer`：模块的引用者
+      - `isEntryModule`：判断该模块是否为入口文件
+      - 等等
+    + `chunk`对象：模块封装容器，提供如下接口：
+      - `addModule`：添加模块，之后该模块会与Chunk中其它模块一起打包，生成最终产物
+      - `removeModule`：删除模块
+      - `containsModule`：判断是否包含某个特定模块
+      - `size`：推断最终产物大小
+      - `hasRuntime`：判断Chunk中是否包含运行时代码
+      - `updateHash`：计算Hash值
+    + `stats`对象：统计构建过程中收集到的信息，包括模块构建耗时、模块依赖关系、产物文件列表等
+  * 日志处理
+    + 使用`compilation.getLogger`获取分级日志管理器(用法和Loader的getLogger相似)
+      ```javascript
+        const PLUGIN_NAME = 'ConsoleWebpackPlugin';
+
+        class ConsoleWebpackPlugin {
+          apply(compiler) {
+            compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
+              const logger = compilation.getLogger(PLUGIN_NAME);
+              logger.info('消息')
+            });
+          }
+        }
+
+        module.exports = ConsoleWebpackPlugin;
+      ```
+      ![plugin-logger](./images/info-logger.png)
+    + 使用`compilation.errors/warning`处理异常信息
+      ```javascript
+        const PLUGIN_NAME = 'ErrorWebpackPlugin';
+
+        class ErrorWebpackPlugin {
+          apply(compiler) {
+            compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
+              compilation.errors.push(Error('ConsolePlugins上报的错误'));
+              compilation.warnings.push(Error('ConsolePlugins上报的异常'));
+            });
+          }
+        }
+
+        module.exports = ErrorWebpackPlugin;
+      ```
+      ![plugin-error](./images/plugin-error.png)
+    + 使用Hook Callback<br />
+      Hook Callback可以讲错误信息传递到下一个流程，由Hook触发者根据错误内容决定后续处理措施(中断、忽略、记录日志等)。<br />
+      注意，不是所有Hook都会传递`callback`函数，实际开发看文档。
+    + 直接抛出异常<br />
+      这种方式会导致Webpack进程崩溃，多用于插件遇到严重错误。
+  * 上报统计信息
+    + [ProgressPlugin](https://webpack.js.org/plugins/progress-plugin)<br />
+      - 在Webpack中添加实例
+        > Provide a handler function which will be called when hooks report progress. handler function arguments：
+        >  * `percentage`：a number between 0 and 1 indicating the completion percentage of the compilation
+        >  * `message`：a short description of the currently-executing hook
+        >  * `...args`：zero or more additional strings describing the current progress
+
+        ```javascript
+          // webpack.config.js
+          const { ProgressPlugin } = require('webpack');
+
+          module.exports = {
+            // ...
+            plugins: [
+              new ProgressPlugin({
+                activeModules: false,
+                entries: false,
+                handler(percentage, message, ...args) {
+                  console.info(`${percentage.toFixed(2) * 100}%`, message, ...args);
+                }
+              })
+            ]
+          }
+        ```
+      
+      - 开发插件时，可以使用`ProgressPlugin`插件的`Reporter`方法提交自定义插件的运行进度。
 
 
     
