@@ -1450,6 +1450,353 @@
     + 运行：npm jest --coverage
       ![plugin-jest](./images/plugin-jest.png)
 
+### Hook
+##### [Tapable](https://github.com/webpack/tapable)
+
+> Webpack的插件体系是一种基于Tapable实现的强耦合架构，在特定时机触发钩子时会附带足够的上下文信息，插件定义的钩子回调中，能也只能与这些上下文背后的数据结构、接口交互产生side effect，进而影响到编译状态和后续流程。
+  * 用法
+    ```javascript
+      const { SyncHook } = require('tapable');
+      // 创建钩子实例
+      const demoHook = new SyncHook();
+      // 调用订阅接口注册回调
+      sleep.tap('test', () => {
+        console.log('test callback');
+      });
+      // 调用发布接口触发回调
+      sleep.call();
+    ```
+    使用Tabable时通常经历三个步骤：
+      + 创建钩子实例
+      + 调用订阅接口注册回调
+      + 调用发布接口触发回调
+  * Hook类型
+    ```javascript
+      const {
+        SyncHook,
+        SyncBailHook,
+        SyncWaterfallHook,
+        SyncLoopHook,
+        AsyncParallelHook,
+        AsyncParallelBailHook,
+        AsyncSeriesHook,
+        AsyncSeriesBailHook,
+        AsyncSeriesWaterfallHook
+      } = require("tapable");
+    ```
+    Hook的类型很多，但整体遵循两种分类规则
+      + 按回调逻辑
+        - 基本类型：名称不带`Waterfall/Bail/Loop`关键词，与`订阅/回调`模式相似，按钩子注册顺序，逐次调用回调
+        - waterfall类型：前一个回调的返回值会带入到下一个回调
+        - bail类型：逐次调用回调，若有任何一个回调返回非`undefined`值，则终止后续调用
+        - loop类型：逐次、循环调用，直到所有回调函数都返回`undefined`
+      + 按回调执行方式
+        - sync：同步执行，启动后会按次序逐个执行回调，支持`call/tap`调用语句
+        - async：异步执行，支持传入callback或promise风格的异步回调函数，支持`callAsync/tapAsync`、`promise/tapPromise`两种调用语句
+  * `SyncHook`<br />
+    触发后会按照注册顺序逐个调用回调，且不关心这些回调的返回值。
+    ```javascript
+      const { SyncHook } = require('tapable');
+
+      class Somebody {
+        constructor() {
+          this.hooks = {
+            demoHook: new SyncHook()
+          };
+        }
+
+        emit() {
+          this.hooks.demoHook.call();
+        }
+      }
+
+      const person = new Somebody();
+      person.hooks.demoHook.tap('test', () => {
+        console.log('callback 1');
+      });
+      person.hooks.demoHook.tap('test', () => {
+        console.log('callback 2');
+      });
+      person.hooks.demoHook.tap('test', () => {
+        console.log('callback 3');
+      });
+      person.emit();
+      // 输出：
+      // callback 1
+      // callback 2
+      // callback 3
+    ```
+    也可以选择异步风格的`callAsync`，选用`call`或`callAsync`并不会影响回调的执行逻辑：按注册顺序依次执行和忽略回调执行结果，两者唯一的区别是`callAsync`需要传入`callback`函数，用于处理回调队列可能抛出的异常。
+    ```javascript
+      // callAsync风格
+      this.hooks.demoHook.callAsync((err) => {
+        if (err) { // ... }
+      });
+    ```
+  * `SyncBailHook`<br />
+    `bail`单词有熔断的意思，`bail`类型钩子的特点是在回调队列中，若任意回调返回了非`undefined`值，则中断后续处理，直接返回该值。<br />
+    `SyncBailHook`的调用顺序与规则都和`SyncHook`相似，主要区别是`SyncBailHook`增加了熔断逻辑。
+    ```javascript
+      const { SyncBailHook } = require('tapable');
+
+      class Somebody {
+        constructor() {
+          this.hooks = {
+            demoHook: new SyncBailHook()
+          };
+        }
+        
+        emit() {
+          return this.hooks.demoHook.call();
+        }
+      }
+
+      const person = new Somebody();
+      person.hooks.demoHook.tap('test', () => {
+        console.log('callback 1');
+        return 'value';
+      });
+      person.hooks.demoHook.tap('test', () => {
+        console.log('callback 2');
+      });
+      console.log(person.emit());
+      // 输出：
+      // callback 1
+      // value
+    ```
+    `SyncBailHook`通常用在发布者需要关心订阅回调运行结果的场景，例如Webpack会根据某些钩子的运行结果决定是否执行后续操作。
+  * `SyncWaterfallHook`<br />
+    `waterfall`类型钩子特点是将前一个函数的结果作为参数传入下一个函数，最后一个回调的结果作为`call`调用的结果返回。
+    ```javascript
+      const { SyncWaterfallHook } = require('tapable');
+
+      class Somebody {
+        constructor() {
+          this.hooks = {
+            demoHook: new SyncWaterfallHook(['param'])
+          };
+        }
+
+        emit() {
+          this.hooks.demoHook.call('初始参数');
+        }
+      }
+
+      const person = new Somebody();
+      person.hooks.demoHook.tap('test', (arg) => {
+        console.log(`调用初始参数：${arg}`);
+        return '参数1';
+      });
+      person.hook.demoHook.tap('test', (arg) => {
+        console.log(`调用上一个回调返回结果：${arg}`);
+        return '最后一个参数';
+      });
+      console.log('最终结果：' + person.emit());
+      // 输出：
+      // 调用初始参数：初始参数
+      // 调用上一个回调返回结果：参数1
+      // 最终结果：最后一个参数
+    ```
+    `SyncWaterfallHook`初始化时必须提供参数，用于动态编译`call`的参数依赖，发布调用`call`时，需要传入初始参数。
+  * `SyncLoopSync`<br />
+    `loop`类型钩子的特点是循环执行，直到所有回调都返回`undefined`。
+    ```javascript
+      const { SyncLoopHook } = require('tapable');
+
+      class Somebody {
+        constructor() {
+          this.hooks = {
+            demoHook: new SyncLoopHook()
+          };
+        }
+
+        emit() {
+          return this.hooks.demoHook.call();
+        }
+      }
+
+      const person = new Somebody();
+      let i = 0;
+      person.hooks.demoHook.tap('test', () => {
+        i += 1;
+        console.log(`第${i}次执行执行回调A`);
+        if (i <= 2) {
+          return i;
+        }
+      });
+
+      person.hooks.demoHook.tap('test', () => {
+        console.log('执行回调B')
+      });
+
+      person.emit();
+      // 输出：
+      // 第1次执行回调A
+      // 第2次执行回调A
+      // 第3次执行回调A
+      // 执行回调B
+    ```
+  * `AsyncSeriesHook`<br />
+    `AsyncSeriesHook`支持异步回调，可以在回调函数中写`callback`或`promise`风格的异步操作，回调队列依次执行，与`SyncHook`一样，不关心回调结果。
+    ```javascript
+      const { AsyncSeriesHook } = require('tapable');
+
+      const hook = new AsyncSeriesHook();
+      hook.tapAsync('test', (callback) => {
+        console.log('回调A异步开始');
+        setTimeout(() => {
+          console.log('回调A异步结束');
+          callback();
+        }, 1000);
+      });
+      hook.tapAsync('test', () => {
+        console.log('回调B');
+      });
+
+      hook.callAsync();
+      // 输出：
+      // 回调A异步开始
+      // 回调A异步结束
+      // 回调B
+    ```
+    也可以通过promise风格调用，区别是需要将`tapAsync`改为`tapPromise`，Tap回调需要返回Promise，`callAsync`需要改为`promise`。
+    ```javascript
+      const { AsyncSeriesHook } = require('tapable');
+
+      const hook = new AsyncSeriesHook();
+      hook.tapPromise('test', () => Promise.resolve());
+
+      hook.promise();
+    ```
+  * `AsyncParallelHook`<br />
+    与`AsyncSeriesHook`类似，`AsyncParallelHook`也支持异步风格的回调，不过是以并行的方式，同时执行回调队列里所有回调，并且与`SyncHook`一样不关心回调的执行结果。
+  * Hook动态编译<br />
+    Webpack中的hook底层都基于Tapable的**动态编译**实现。<br />
+    不同Hook中的同步、异步、bail、waterfall、loop等回调规则都是Tapable根据Hook类型、参数、回调队列等参数，调用`new Function`语句动态拼装出一段控制执行流程的JS代码实现的。<br />
+    使用`new Function`实现Hook设计的原因，以`AsyncSeriesWaterfallHook`为例：
+    ```javascript
+      const { AsyncSeriesWaterfallHook } = require('tapable');
+
+      const hook = new AsyncSeriesWaterfallHook(['name']);
+
+      hook.tapAsync('test', (text, cb) => {
+        console.log(`${text} world 1`)
+        setTimeout(() => {
+          cb(undefined, `${text} world`);
+        });
+      });
+
+      hook.tapAsync('test', (text, cb) => {
+        console.log(`${text} world 2`)
+        setTimeout(() => {
+          cb(undefined, `${text} !`);
+        });
+      });
+
+      hook.callAsync('hello', (err, text) => {
+        if (err !== undefined) {
+          console.log('text');
+        } 
+      });
+
+      // 输出：
+      // hello world 1
+      // hello world 2
+      // hello world !
+    ```
+    `AsyncSeriesWaterfallHook`的特点是异步串行，前一个回调的返回值会传入下一个回调，对应动态生成函数：
+    ```javascript
+      (function anonymous(text, _callback) {
+        "use strict";
+        var _context;
+        var _x = this._x;
+        function _next0() {
+          var _fn1 = _x[1];
+          _fn1(text, function(_err1, _result1) {
+            if (_err1) {
+              _callback(_err1);
+            } else {
+              if (_result1 !== undefined) {
+                text = _result1;
+              }
+               _callback(null, text);
+            }
+          });
+        }
+        var _fn0 = _x[0];
+        _fn0(text, function(_err0, _result0) {
+          if (_err0) {
+            _callback(_err0);
+          } else {
+            if (_result0 !== undefined) {
+              text = _result0;
+            }
+            _next0();
+          }
+        });
+      });
+    ```
+    可以看到生成函数将回调队列中各项封装为`_nextX`函数，这些`next`函数内部逻辑高度相似，并按照回调定义顺序依次串行执行。<br />
+    相比其它实现方式，动态生成的`AsyncSeriesWaterfallHook`函数逻辑更易理解。
+  * 高级特性：Intercept<br />
+    tapable提供了简易的中间件机制 —— `intercept`接口。
+    ```javascript
+      const { SyncHook } = require('tapable');
+
+      const hook = new SyncHook();
+      hook.intercept({
+        name: 'test',
+        context: true,
+        call() {},
+        loop() {},
+        tap() {},
+        register() {},
+      });
+    ```
+    `intercept`支持注册的中间件：
+    | 签名 | 解释 |
+    | --- | --- |
+    | call: (...args) => void | 调用`call/callAsync/promise`时触发 |
+    | tap: (tap: Tap) => void | 调用`call`类函数后，每次调用回调之前触发 |
+    | loop: (...args) => void | 仅`loop`型的钩子有效，在循环开始之前触发 |
+    | register: (tap: Tap) => Tap | undefined | 调用`tap/tapAsync/tapPromise`时触发 |
+  * 高级特性：HookMap<br />
+    HookMap可以降低创建和使用的复杂度，使用简单。
+    ```javascript
+      const { SyncHook, HookMap } = require('tapable');
+
+      const hook = new HookMap(() => new SyncHook());
+
+      hook.for('condition').tap('test', () => {});
+      hook.get('condition').call();
+    ```
+    HookMap可以实现动态获取钩子的能力，这样就无需在初始化时为每种情况创建对应钩子，只需在使用时动态创建、获取对应实例即可。
+    ```javascript
+      const { SyncHook, HookMap } = require('tapable');
+
+      class Somebody {
+        constructor() {
+          this.hooks = {
+            demoHook: new HookMap(() => new SyncHook())
+          };
+        }
+
+        walk() {
+          const hooks = this.hooks.demoHook.get('condition');
+          if (hooks) {
+            // ...
+          }
+        }
+      }
+    ```
+
+
+
+
+
+
+
+        
 
     
 
