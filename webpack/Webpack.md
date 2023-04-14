@@ -19,6 +19,21 @@
 * 后处理：待所有模块处理完毕后执行，包括模块合并、注入运行时、产物优化。最终输出Chunk集合
 * 输出：将Chunk写出到外部文件系统
 
+##### 按阶段分
+* 初始化阶段：
+  + 初始化参数：从配置文件、配置对象、shell参数中读取，与默认配置结合得出最终配置
+  + 创建编译器对象：用参数创建`Compiler`对象
+  + 初始化编译环境：注入内置插件、注入模块工厂、初始化RuleSet集合、加载配置的插件等
+  + 开始编译：执行`Compiler`对象的run方法，创建`Compilation`对象
+  + 确定入口：根据配置的`entry`找出所有的入口文件，调用`compilation.addEntry`将入口文件转换为`dependence`对象
+* 构建阶段：
+  + 编译模块(make)：从`entry`文件开始，调用对应`loader`将模块转为标准JS内容，调用JS解析器将内容转为AST对象，从中找出该模块的依赖模块，再递归处理依赖模块，直到所有入口依赖的文件都经过编译处理完毕
+  + 完成模块编译：得到上一步完成后所有被依赖模块的编译内容和它们之间的依赖关系图
+* 封装阶段：
+  + 合并(seal)：根据入口和模块之间的依赖关系，组装成一个个包含多个模块的`Chunk`
+  + 优化(optimization)：对`Chunk`做进一步优化，包括tree-shaking、terser、压缩等
+  + 写入文件系统(emitAssets)：根据配置确定输出的路径和文件名，把文件内容写入到文件系统
+
 ##### 流程相关配置项
 * 输入输出：
   + entry：定义项目入口文件
@@ -167,21 +182,6 @@
     }
   }
 ```
-
-### 核心流程细解
-* 初始化阶段：
-  + 初始化参数：从配置文件、配置对象、shell参数中读取，与默认配置结合得出最终配置
-  + 创建编译器对象：用参数创建`Compiler`对象
-  + 初始化编译环境：注入内置插件、注入模块工厂、初始化RuleSet集合、加载配置的插件等
-  + 开始编译：执行`Compiler`对象的run方法，创建`Compilation`对象
-  + 确定入口：根据配置的`entry`找出所有的入口文件，调用`compilation.addEntry`将入口文件转换为`dependence`对象
-* 构建阶段：
-  + 编译模块(make)：从`entry`文件开始，调用对应`loader`将模块转为标准JS内容，调用JS解析器将内容转为AST对象，从中找出该模块的依赖模块，再递归处理依赖模块，直到所有入口依赖的文件都经过编译处理完毕
-  + 完成模块编译：得到上一步完成后所有被依赖模块的编译内容和它们之间的依赖关系图
-* 封装阶段：
-  + 合并(seal)：根据入口和模块之间的依赖关系，组装成一个个包含多个模块的`Chunk`
-  + 优化(optimization)：对`Chunk`做进一步优化，包括tree-shaking、terser、压缩等
-  + 写入文件系统(emitAssets)：根据配置确定输出的路径和文件名，把文件内容写入到文件系统
 
 ### 性能
 * 可能引起的性能问题：
@@ -1790,20 +1790,83 @@
       }
     ```
 
-
-
-
-
-
-
-        
-
+### 核心解析
+  > At its core, webpack is a static module bundler for modern JavaScript applications
+  
+  Webpack最核心的能力就是**静态模块打包能力**。<br />
+  Webpack可以将各种类型的资源——包括JS代码、CSS、图片等，都打包为可以在兼容不同版本浏览器的JS代码文件，这一特性可以轻易抹平开发Web时处理不同资源的差异，让开发者以一致的心智模型开发、消费这些不同的资源文件。
+  * 初始化阶段：负责设置构建环境，初始化若干工厂类、注入内置插件等
+    + 校验用户参数，合并默认配置对象
+    + 创建Compiler对象并启动插件
+      - 调用`createCompiler`创建`compiler`对象
+      - 遍历配置中的`plugins`集合，执行插件的`apply`方法
+      - 调用`new WebpackOptionsApply().process`方法，根据配置内容动态注入相应插件
+        * 调用EntryOptionPlugin插件，该插件根据`entry`值注入`DynamicEntryPlugin`或`EntryPlugin`插件
+        * 根据`devtool`值注入SourceMap插件
+        * 注入`RuntimePlugin`，用于根据代码内容动态注入webpack运行时
+    + **调用`compiler.compile`方法开始执行构建**
+  * 构建阶段：读入并分析 Entry 模块，找到模块依赖，之后递归处理这些依赖、依赖的依赖，直到所有模块都处理完毕，这个过程解决资源**输入**问题
+    > 整个构建阶段模块源码经历`module -> ast -> dependencies -> module`，先将源码解析为AST（这个过程需要loaders将不同类型的资源转为标准JS代码），再在AST中遍历`import`等导入语句，收集模块依赖，最后遍历`dependencies`数组将Dependency转为Module对象，之后继续递归处理这些新的Module，直到所有项目文件处理完毕。
+    + 从`entry`模块开始递归解析模块内容、找出模块依赖，逐步构建出项目整体`module`集合以及`module`之间的依赖关系图
+    + 从`addEntry`后开始
+      * 文具文件类型构建`module`子类
+      * 调用`loader-runner`转译`module`内容，将各类资源转译为Webpack能理解的标准JS代码
+      * 调用`acorn`将JS代码解析为AST
+      * 在`JavaScriptParser`类中遍历AST，触发各种钩子，其中最关键的
+        + 遇到`import`语句，触发`exportImportSpecifier`钩子
+        + `HarmonyExportDependencyParserPlugin`监听该钩子，将依赖资源添加为Dependency对象
+        + 调用`module`对象的`addDependency`，将Dependency对象转为Module对象并添加到依赖数组中
+        + AST遍历完，处理模块依赖数组
+        + 对于`module`新增的依赖，调用`handleModuleCreate`，控制流回到第一步遇到`import`语句
+        + 所有依赖都解析完毕，构建阶段结束
+  * 生成阶段：根据Entry配置将模块封装进不同Chunk对象，经过一系列优化后，再将模块代码翻译成产物形态，按Chunk合并成最终产物文件，这个过程解决资源**输出**问题
+    > 构建阶段负责读入和分析源码文件，将文件转为Module、Dependency对象，解决的是**资源输入**问题；而生成阶段则是根据一系列内置规则，将构建出的所有Module对象拆分编排进若干Chunk对象中，之后以Chunk粒度将源码转译为适合在目标环境运行的产物形体并写出，解决的是**资源输出**问题
     
+    生成阶段发生在`make`阶段执行完毕，`compiler.compile`调用`compilation.seal`函数时，换而言之，`compilation.seal`是生成阶段的入口。
+      + 创建ChunkGraph对象
+      + 遍历入口集合`compilation.entries`
+        - 调用`addChunk`方法为每个对象创建对应的Chunk对象（EntryPoint Chunk）
+        - 遍历该入口对应的Dependency集合，找到相应Module并关联到该Chunk
+      + 得到若干Chunk后调用`buildChunkGraph`方法将这些Chunk处理成Graph结构，方便后续处理
+      + 触发`optimizeModules/optimizeChunks`等钩子，由插件（如`SplitChunksPlugin`）进一步裁减、优化Chunk结构
+      + 生成Chunk代码，为每个Chunk生成资产文件
+      + 调用`compilation.emitAssets`函数提交资产文件，这里只是记录了资产文件信息，还未写出磁盘
+      + 触发`callback`回调，控制流回到`compiler`函数，调用`compiler`函数的`emitAssets`方法，输出资产文件
 
+##### Dependency Graph
+  > 每当一个文件依赖另外一个文件时，Webpack都会将文件视为直接存在**依赖关系**。这使得Webpack可以获取非代码资源，如图片和Web字体等，并会把它们作为**依赖**提供给应用程序。
+  > 当Webpack处理应用程序时，它会根据命令行参数中或配置文件中定义的模块列表开始处理。从**入口**开始，Webpack会递归的构建一个**依赖关系图**，这个依赖图包含着应用程序中所需的每个模块，然后将所有模块打包为少量的bundle——通常只有一个——可由浏览器加载。
 
+  Dependency Graph贯穿Webpack整个运行周期，从构建阶段的模块解析，到生成阶段的Chunk生成，以及Tree-shaking等功能都高度依赖Dependency Graph，是Webpack构建流程中一个非常核心的数据结构。
+  * 数据类型
+    + ModuleGraph：记录Dependency Graph信息的容器，记录构建过程中涉及的所有`module`、`dependency`对象，以及这些对象互相之间的饮用
+    + ModuleGraphConnection：记录模块间引用关系的数据结构，内部通过`originModule`属性记录引用关系中的父模块，通过`module`属性记录子模块
+    + ModuleGraphModule：Module对象在Dependency Graph体系下的补充信息，包含模块对象的`incomingConnections`——指向模块本身的ModuleGraphConnection集合，即谁引用了模块自身；`outgoingConnections`——该模块对外的依赖，即该模块引用了其它哪些模块
+  * 作用
+    + 信息索引
+      - getModule(dep: Dependency)：根据dep查找对应的module实例
+      - getOutgoingConnections(module)：查找module实例的所有依赖
+      - getIssuer(module: Module)：查找module在何处被引用
+    + 辅助构建Chunk Graph
 
-
-
-
-
-
+##### ChunkGraph
+  构建阶段主要分析模块间的依赖，建立起模块之间的依赖关系图（ModuleGraph）；封装阶段根据依赖关系图，将模块分开装进若干Chunk对象中，并将Chunk之间的父子依赖关系疏离成ChunkGraph与若干ChunkGroup对象。
+  * 概念
+    + Chunk：Module用于读入模块内容，记录模块间依赖等；Chunk则根据模块依赖关系合并多个Module，输出资产文件
+    + ChunkGroup：一个ChunkGroup内包含一个或多个Chunk对象；ChunkGroup与ChunkGroup之间形成父子关系
+    + ChunkGraph：Webpack会将Chunk之间、ChunkGroup之间的依赖关系存储到`compilation.chunkGraph`中
+  * 流程
+    + 调用`seal`函数后，遍历`entry`配置，为每个入口创建一个空的Chunk与EntryPoint对象（一种特殊的ChunkGraph），并初步设置ChunkGraph关系。
+    + 在`buildChunkGraph`函数内调用`visitModules`方法，遍历ModuleGraph，将所有Module按照依赖关系分配给不同的Chunk对象；这个过程若遇到异步模块，则为该模块创建新的ChunkGraph与Chunk对象
+    + 在`buildChunkGraph`函数内调用`connectChunkGroups`方法，建立ChunkGroup与Chunk之间的依赖关系，生成完整的ChunkGraph对象
+    + 在`buildChunkGraph`函数内调用`cleanupUnconnectedGroups`方法，清理无效ChunkGroup，主要起性能优化作用
+  * 默认分包规则
+    + ChunkGraph构建流程最终会将Module装入三种不同类型的Chunk中
+      - Entry Chunk：同一个`entry`下的模块及子模块打入Entry Chunk
+      - Async Chunk：异步模块及子模块打入Async Chunk
+      - Runtime Chunk：配置`entry.runtime`后，会将运行时模块打入Runtime Chunk
+        * Webpack会根据业务代码，决定输出支撑特性的运行时代码（基于Dependency子类），例如：
+          + 需要`__webpack_require__.f`、`__webpack_require__.r`等功能实现基本的模块化支持
+          + 如果用到动态加载特性，需要写入`__webpack_require__.e`函数
+  * 分包规则的问题<br />
+    默认分包规则最大的问题是无法解决模块重复，如果多个Chunk依赖同一个Module，那么这个Module会不受限制得重复打入这些Chunk中。     
