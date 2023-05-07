@@ -25,6 +25,7 @@ const config = {
   experiments: {
     topLevelAwait: true,
   },
+  devtool: 'source-map',
   // externals: {
   //   lodash: 'lodash'
   // },

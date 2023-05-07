@@ -534,8 +534,8 @@
   启用上述配置后，Webpack会预设运行环境已内置相关库，不需要再将这些模块打包到产物中。
   使用
 
-##### 使用 Tree-Shaking 删除多余模块导出
-  > `Tree-Shaking`是基于`ES Module`规范的`Dead Code Elimination`技术，它会在运行过程中静态分析模块之间的导入导出，删除未使用的导出值。
+##### 使用 Tree-shaking 删除多余模块导出
+  > `Tree-shaking`是基于`ES Module`规范的`Dead Code Elimination`技术，它会在运行过程中静态分析模块之间的导入导出，删除未使用的导出值。
   * 启用
     + 配置`optimization.useExports`为true，标记模块导入导出列表
     + 启动代码优化功能：
@@ -552,7 +552,7 @@
     + 配置`mode = production`
     + 配置`optimization.concatenateModules`
     + 使用`ModuleConcatenationPlugin`插件
-  * 与Tree-Shaking类似，Scope Hoisting底层基于`ES Module`的静态特性，推断模块间依赖关系，并进一步判断模块能否合并，因此在以下场景会失效：
+  * 与Tree-shaking类似，Scope Hoisting底层基于`ES Module`的静态特性，推断模块间依赖关系，并进一步判断模块能否合并，因此在以下场景会失效：
     - 非ESM模块
     - 模块被多个Chunk引用
 
@@ -920,7 +920,7 @@
   > loader 用于对模块的源代码进行转换。loader 可以使你在 import 或 "load(加载)" 模块时预处理文件。因此，loader 类似于其他构建工具中“任务(task)”，并提供了处理前端构建步骤的得力方式。loader 可以将文件从不同的语言（如 TypeScript）转换为 JavaScript 或将内联图像转换为 data URL。loader 甚至允许你直接在 JavaScript 模块中 import CSS 文件！
 
   Loader将文件中‘读’与‘处理‘的逻辑解耦，Webpack内部只需实现对标准JS代码解析/处理能力，特定资源的解析逻辑交由Loader补充。<br />
-  Loader通常是一种mapping形式函数，接收原始代码，返回翻译结果：
+  Loader通常是一种mapping形式函数，接收原码，返回翻译结果：
   ```javascript
     module.exports = function (source) {
       const modifySource = doSomeThing(source);
@@ -1870,3 +1870,169 @@
           + 如果用到动态加载特性，需要写入`__webpack_require__.e`函数
   * 分包规则的问题<br />
     默认分包规则最大的问题是无法解决模块重复，如果多个Chunk依赖同一个Module，那么这个Module会不受限制得重复打入这些Chunk中。     
+
+##### Runtime
+  * 收集运行时依赖
+    + 第一次循环遍历所有module，收集所有module的runtime依赖
+    + 第二次循环遍历所有chunk，将chunk下所有module的runtime统一收录到chunk中
+    + 第三次循环遍历所有runtime chunk，收集其对应的子chunk下所有runtime依赖
+  * 合并最终产物<br />
+    模块合并打包过程会将chunk对应的module及runtimeModule按规则塞进模板框架中，最终合并输出成完整的bundle文件
+
+### Tree-shaking
+  >>> Tree-shaking本质上是一种基于`ES Module`规范的`Dead Code Elimination`技术，它会在运行过程中静态分析模块之间的导入导出，确定ESM模块中哪些导出值未曾其他模块使用，并将其删除，以此实现打包产物的优化。
+  
+  * 启用Tree-shaking需要满足三个条件：
+    + 使用ESM规范编写模块代码
+    + 配置`optimization.usedExports`为true，启用标记功能
+    + 启用代码优化功能：
+      - 配置`mode=production`
+      - 配置`optimization.minimize = true`
+      - 提供`optimization.minimizer`数组
+  
+  ```javascript
+    // webpack.config.js
+    module.exports = {
+      entry: './src/index.js',
+      mode: 'production',
+      optimization: {
+        usedExports: true
+      }
+    }
+  ```
+  * 原理
+    + 标记模块导出中没用到的值，标记的效果就是删除那些没被其他模块使用的“导出语句”
+      ![Tree-shaking](./images/tree-shaking.png)
+      `变量b`没有被其它模块使用，被标记。此时，`变量b`对应的代码`var b = 1;`还保留着，因为标记功能只影响模块的导出语句，真正执行“Shaking”的是Terser插件。
+    + 使用代码压缩插件——如Terser删除这些没用的导出值
+  * 步骤
+    + 【构建】阶段，【收集】模块导出变量并记录到模块关系依赖图ModuleGraph对象中
+    + 【封装】阶段，遍历所有模块，【标记】模块导出变量是否被使用
+    + 使用代码优化插件——如Terser，删除无效导出代码
+  * 最佳实践
+    + 始终使用ESM<br />
+      ESM规范要求所有导入导出语句只能在模块顶层，且导入导出的模块名必须为字符串常量。所以ESM模块之间的依赖关系是高度确定的，与运行状态无关，编译工具只需要对ESM模块做静态分析，就可以从代码字面量中推断出哪些模块值未曾被其它模块使用，这是使用Tree-shaking的必要条件。
+    + 避免无意义的赋值
+      ```javascript
+        // bar.js
+        export const bar = 'bar';
+        export const foo = 'foo';
+
+        // index.js
+        import { bar, foo } from 'bar.js';
+
+        console.log(bar);
+        const f = foo;
+      ```
+      `index模块`引用了`foo变量`并赋值给`f变量`，但后续并未使用，这种场景下，`bar模块`导出的`foo`变量理应被删除，但实际没有。
+      因为Webpack的Tree-shaking在代码静态分析时，只是简单判断：
+        - 模块导出变量会否被其它模块引用
+        - 引用模块的主体代码中有没有出现这个变量
+      
+      并不会进一步从语义上分析模块导出值是不是真的被有效使用。更深层次的原因是JS的赋值语句不纯，某些场景下可能产生意料之外的副作用：
+        ```javascript
+          import { foo } from 'foo.js';
+
+          const mock = {};
+          let i = 0;
+          Object.defineProperty(mock, 'f', {
+            set(v) {
+              mock._f = v;
+              i += 1;
+            }
+          });
+          mock.f = foo;
+          console.log(i);
+        ```
+      示例中，对`mock对象`的劫持导致`mock.f = foo`赋值语句对`变量i`产生副作用，这种场景下即使用复杂的动态语义分析，也很难在确保正确副作用的前提下，完美Shaking掉所有无效代码枝叶。
+    + 使用`#pure`标注纯函数调用
+      与赋值语句类似，JS中的函数调用语句也可能产生副作用，因此默认情况下Webpack不会对函数调用做Tree-shaking操作。开发者可以在调用语句前添加`/*#__PURE__*/`备注，，明确告诉Webpack该函数不会对上下文环境产生副作用。
+      ```javascript
+        function foo(arg) {
+          console.log(arg);
+        }
+
+        foo('remain');
+        /*#__PURE__*/foo('remove'); // 产物中被删除
+      ```
+    + 禁止Babel转译模块导入导出语句<br />
+      Babel可以将高版本的JS代码转译为兼容性更佳的低版本代码，但Babel提供的部分功能会使Tree-shaking功能失效，例如Babel可以将ESM风格的导入导出语句等价转译为CommonJS风格的模块化语句，该功能导致Webpack无法对转译后的模块导入导出内容做静态分析。<br />
+      所以在Webpack中使用`babel-loader`时，建议将`babel-preset-env`的`modules`配置项设置为`false`，关闭模块导入导出语句的转译。
+    + 优化导出值的粒度<br />
+      ```javascript
+        export default {
+          bar: 'bar',
+          foo: 'foo'
+        };
+      ```
+      即使开发中只用到了`default`导出值中一个属性，整个`default`还是完整保留，所以开发中尽量保持导出值的颗粒度和原子性。
+      ```javascript
+        const bar = 'bar';
+        const foo = 'foo';
+
+        export default {
+          bar,
+          foo
+        };
+      ```
+    + 使用支持Tree-shaking的包<br />
+      例如使用`lodash-es`替代`lodash`。<br />
+      并非所有npm包都存在Tree-shaking空间，例如vue之类的框架，生成版本已经做了极致优化，整个业务代码需要整个代码包提供的完整功能。
+    + 在异步模块中使用Tree-shaking<br />
+      在Webpack5之后，可以通过一种特殊的备注语法，实现异步模块的Tree-shaking功能。
+      ```javascript
+        import(/* webpackExports: ["default"] */'foo.js').then(module => console.log(module.default));
+      ```
+      通过`/* webpackExports: xxx */`备注语句，显示声明即将消费的异步模块有哪些导出内容，Webpack可借此判断模块依赖，实现Tree-shaking。
+
+### Sourcemap
+  > Webpack内部在`processAssets`钩子遍历产物文件`assets`数组，调用`webpack-sources`提供的map方法，计算出`asset`与源码`originSource`之间的映射关系。
+  * V3版本的Sourcemap文件由三部分组成：
+    + 开发者编写的原码
+    + Webpack打包后的产物，且产物中必须包含指向Sourcemap文件地址的`//# sourceMappingURL=xxxx`指令
+    + 记录原码与经过产物代码之间位置的映射关系Map文件
+  * 页面初始运行时只会构建产物，直到特定时间发生——例如打开Devtool调试面板，才会根据`//# sourceMappingURL`内容自动加载Map文件，并按Sourcemap协议约定的映射规则将代码重构还原回原始形态，这既能保证终端用户的性能体验，又能帮助开发者快速还原现场。
+  * Map文件通常为JSON格式
+    ![sourcemap](./images/sourcemap1.png)
+    + version：指Sourcemap版本
+    + names：记录原码中出现变量名
+    + file： 该Sourcemap文件对应的编译产物文件名
+    + sourcesContent：原码内容
+    + sourceRoot：源文件根目录
+    + sources：原始文件路径名，与`sourcesContent`内容一一对应
+    + mappings：记录产物与原码的位置映射关系
+  * [devtool规则](https://webpack.js.org/configuration/devtool/)<br />
+    devtool规则的枚举值都是由`inline、eval、source-map、nosources、hidden、cheap、module`七种关键词组合而成，这些关键词各代表一项Sourcemap规则
+    + eval：生成的模块代码会被包裹进一段`eval`函数中，且模块的Sourcemap信息`//# sourceURL`直接挂载在模块代码内，`eval`模式编译速度快，但产物中直接包含Sourcemap信息，因此只推荐开发环境使用。
+      ```javascript
+        eval("var foo = 'bar'\n\n\n//# sourceURL=webpack:///./src/index.ts?")
+      ```
+    + source-map：Webpack会生成Sourcemap内容（例如额外的.map文件），实际上除了`eval`之外的枚举值都包含`source-map`。
+    + cheap：Webpack生成的Sourcemap内容会抛弃列维度的信息，意味着浏览器只能映射到行维度。如果行维度信息已经足够帮助调试定位，那么可以使用`cheap`关键词简化Sourcemap内容。
+    + module：`module`关键词只在`cheap`场景下生效，Webpack会根据是否包含`module`关键词判断定位到Loader处理前还是处理后的代码作为source。包含`module`关键词就会将Loader处理前（原码）的代码作为source。
+    + nosources：Webpack生成的Sourcemap内容不包含源码内容——即`sourcesContent`字段。虽然没有带上源码，但是`.ma`p文件产物依然能帮助开发者定位到源码相应位置，配合`Sentry`等工具提供的源码映射功能，可以异地还原错误信息。
+    + inline：Webpack会将Sourcemap内容编码为`Base64 DataURL`，直接追加到产物文件中。`inline`模式编译速度慢，只适合开发环境使用。
+    + hidden：当包含`hidden`关键词时，产物不包含`sourceMappingURL`。当需要Sourcemap功能，又不希望浏览器Devtool工具自动加载，可以用此项，当需要Sourcemap时，可以在浏览器中手动加载。
+  * 总结
+    + 开发环境，适合使用：
+      - eval：速度极快，但只能看到原始文件结构，看不到打包前的代码内容。
+      - cheap-eval-source-map：速度比较快，可以看到打包前的内容，但看不到Loader处理前的源码。
+      - cheap-module-eval-source-map：速度比较快，可以看到Loader处理前的内容，但定位不到列级别。
+      - eval-source-map：初次编译较慢，定位精度高。
+    + 生产环境，适合使用：
+      - source-map：信息最完整，安全性最低。外部用户可轻易获取到源码，慎用。
+      - hidden-source-map：信息较完整，安全性较低。外部用户可获取`.map`文件地址来拿到源码。
+      - nosources-source-map：源码信息缺失，安全性较高。需要配合Sentry等工具实现完整的Sourcemap映射。
+
+### HMR
+  > HMR全称`Hot Module Replacement`，【热模块更新】，可以在保持页面状态不变的情况下动态添加、替换、删除模块代码，提供丝滑顺畅的Web开发体验。
+  * 使用
+    + 设置`devServer.hot = true`
+    + 通过`module.hot.accept`接口定制模块的热更新替换规则
+  * 核心逻辑
+    + 使用`webpack-dev-server`托管静态资源，同时以Runtime方式注入一段处理HMR逻辑的客户端代码
+    + 浏览器加载页面后，与WDS建立WebSocket连接
+    + Webpack监听到文件变化后，增量构建发生变化的模块，并通过WebSocket发送`hash`事件
+    + 浏览器接收到`hash`事件后，请求`manifest`资源文件，确认增量变更范围
+    + 浏览器加载发生变更的增量模块
+    + Webpack运行时触发变更模块的`module.hot.accept`回调，执行代码变更逻辑
